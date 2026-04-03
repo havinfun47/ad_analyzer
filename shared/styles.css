@@ -814,6 +814,9 @@ input[type="date"]:focus { border-color: var(--accent); }
 
 .ad-thumb-video-badge {
   position: relative;
+  display: inline-block;
+  line-height: 0;
+  flex-shrink: 0;
 }
 
 .ad-thumb-video-badge::after {

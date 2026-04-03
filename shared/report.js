@@ -520,20 +520,31 @@ function renderAdTable(rows, currency) {
       label: "Ad",
       numeric: false,
       render(val, row) {
-        const thumb = row.thumbnailUrl
-          ? `<div class="ad-thumb-video-badge" style="${row.isVideo ? "" : "display:contents"}">
-               <img class="ad-thumb" src="${row.thumbnailUrl}"
-                    loading="lazy"
-                    onerror="this.parentElement.replaceWith(this.parentElement.nextElementSibling)">
-             </div>
-             <div class="ad-thumb-placeholder" style="display:none"></div>`
-          : `<div class="ad-thumb-placeholder">
-               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                 <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-                 <polyline points="21 15 16 10 5 21"/>
-               </svg>
-             </div>`;
-        return `<div class="ad-thumb-cell">${thumb}<span class="ad-name-text">${val}</span></div>`;
+        const placeholder = `<div class="ad-thumb-placeholder">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+        </div>`;
+
+        let thumbEl;
+        if (row.thumbnailUrl) {
+          if (row.isVideo) {
+            // Video: wrap in badge div so the ::after play overlay applies
+            thumbEl = `<div class="ad-thumb-video-badge">
+              <img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy"
+                   onerror="this.closest('.ad-thumb-video-badge').style.display='none'">
+            </div>`;
+          } else {
+            // Image ad: plain img, hide on error
+            thumbEl = `<img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy"
+                            onerror="this.style.display='none'">`;
+          }
+        } else {
+          thumbEl = placeholder;
+        }
+
+        return `<div class="ad-thumb-cell">${thumbEl}<span class="ad-name-text">${val}</span></div>`;
       }
     },
     { key: "spend",      label: "Amount Spent",        numeric: true, fmt: v => formatCurrency(v, c) },
