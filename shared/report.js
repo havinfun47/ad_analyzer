@@ -451,7 +451,7 @@ async function fetchAdThumbnails(adAccountId) {
         if (data.error) throw new Error(data.error.message);
       } else {
         data = await apiGet(`${adAccountId}/ads`, {
-          fields: "id,name,creative{thumbnail_url,object_type}",
+          fields: "id,name,creative{thumbnail_url,image_url,object_type,object_story_spec{link_data{picture},video_data{thumbnail_url}}}",
           limit: 200
         });
       }
@@ -461,9 +461,18 @@ async function fetchAdThumbnails(adAccountId) {
 
     const map = {};
     for (const ad of all) {
+      const cr = ad.creative || {};
+      const objectType = (cr.object_type || "").toUpperCase();
+      // Try multiple fields — different ad formats populate different ones
+      const thumbnailUrl =
+        cr.thumbnail_url ||
+        cr.object_story_spec?.video_data?.thumbnail_url ||
+        cr.object_story_spec?.link_data?.picture ||
+        cr.image_url ||
+        null;
       map[ad.id] = {
-        thumbnailUrl: ad.creative?.thumbnail_url || null,
-        isVideo: (ad.creative?.object_type || "").toUpperCase() === "VIDEO"
+        thumbnailUrl,
+        isVideo: objectType === "VIDEO"
       };
     }
     return map;
@@ -672,21 +681,47 @@ function initEditorialBlocks() {
 
     el.addEventListener("input", () => saveEditorial(type, el.innerHTML));
 
-    // Handle image paste
+    // Handle paste — strip color styles, handle images
     el.addEventListener("paste", e => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of items) {
+      e.preventDefault();
+      const cd = e.clipboardData;
+      if (!cd) return;
+
+      // Image paste takes priority
+      for (const item of cd.items || []) {
         if (item.type.startsWith("image/")) {
-          e.preventDefault();
           const file = item.getAsFile();
           const reader = new FileReader();
-          reader.onload = ev => {
-            document.execCommand("insertImage", false, ev.target.result);
-          };
+          reader.onload = ev => document.execCommand("insertImage", false, ev.target.result);
           reader.readAsDataURL(file);
+          return;
         }
       }
+
+      // HTML paste — strip color/background/font styles so text is visible on dark bg
+      const html = cd.getData("text/html");
+      if (html) {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        doc.querySelectorAll("[style]").forEach(node => {
+          let s = node.getAttribute("style");
+          s = s.replace(/\bcolor\s*:[^;]+;?/gi, "")
+               .replace(/\bbackground(-color)?\s*:[^;]+;?/gi, "")
+               .replace(/\bfont-family\s*:[^;]+;?/gi, "")
+               .replace(/\bfont-size\s*:[^;]+;?/gi, "");
+          s.trim() ? node.setAttribute("style", s) : node.removeAttribute("style");
+        });
+        // Remove legacy color/bgcolor attributes
+        doc.querySelectorAll("[color],[bgcolor]").forEach(node => {
+          node.removeAttribute("color");
+          node.removeAttribute("bgcolor");
+        });
+        document.execCommand("insertHTML", false, doc.body.innerHTML);
+        return;
+      }
+
+      // Plain text fallback
+      const text = cd.getData("text/plain");
+      if (text) document.execCommand("insertText", false, text);
     });
 
     // Handle image drag-drop
