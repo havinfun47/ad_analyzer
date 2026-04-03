@@ -782,6 +782,60 @@ input[type="date"]:focus { border-color: var(--accent); }
   border-radius: 2px;
 }
 
+/* ── Ad Thumbnail ─────────────────────────────────────────── */
+.ad-thumb-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ad-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  display: block;
+}
+
+.ad-thumb-placeholder {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.ad-thumb-video-badge {
+  position: relative;
+}
+
+.ad-thumb-video-badge::after {
+  content: '▶';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(0,0,0,0.45);
+  border-radius: 4px;
+}
+
+.ad-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
 /* ── Scrollbar global ─────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -820,79 +874,111 @@ input[type="date"]:focus { border-color: var(--accent); }
 }
 
 /* ============================================================
-   PRINT STYLES
+   PRINT / PDF STYLES  — dark theme preserved
    ============================================================ */
 @media print {
-  :root {
-    --bg: #ffffff;
-    --bg-surface: #f8f8f8;
-    --bg-elevated: #f0f0f0;
-    --bg-card: #f8f8f8;
-    --border: #e0e0e0;
-    --border-subtle: #ebebeb;
-    --text: #111111;
-    --text-muted: #555555;
-    --text-dim: #aaaaaa;
-    --accent: #006633;
-    --accent-dim: rgba(0,102,51,0.1);
-    --red: #cc0000;
-    --red-dim: rgba(204,0,0,0.1);
-  }
+  @page { size: A4 landscape; margin: 10mm 14mm; }
 
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 
-  body { background: #fff; color: #111; }
+  /* ── Keep dark theme ───────────────────────────────────────── */
+  body {
+    background: #0A0A0A !important;
+    color: #F0EDE8 !important;
+    font-size: 11px;
+  }
 
+  /* ── Hide UI chrome ────────────────────────────────────────── */
   #nav,
-  .btn-export,
-  .btn-ghost,
+  #token-screen,
+  .no-print,
   .custom-date-row,
-  .date-select-wrapper,
-  .editorial-toolbar,
   #loading-state,
   #error-state { display: none !important; }
 
+  /* ── Layout ────────────────────────────────────────────────── */
   #report { max-width: 100%; padding: 0; }
+  .report-header { margin-bottom: 20px; }
+  .report-title  { font-size: 26px !important; }
+  .section       { margin-bottom: 20px; }
+  .section-divider { margin: 16px 0; }
 
-  .kpi-grid { grid-template-columns: repeat(4, 1fr); }
-
-  .kpi-card {
-    border: 1px solid #ddd;
-    background: #fff;
-    page-break-inside: avoid;
-  }
-
-  .section { page-break-inside: avoid; }
-
-  .table-wrapper { page-break-inside: auto; }
-
-  .data-table thead { display: table-header-group; }
-  .data-table tr { page-break-inside: avoid; }
-
+  /* ── Print header ──────────────────────────────────────────── */
   .print-header {
     display: flex !important;
     align-items: center;
     justify-content: space-between;
-    padding: 0 0 24px;
-    margin-bottom: 24px;
-    border-bottom: 2px solid #111;
+    padding-bottom: 14px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #333 !important;
   }
 
   .print-header-title {
     font-family: var(--font-head);
-    font-size: 20px;
-    font-weight: 800;
-    color: #111;
+    font-size: 18px;
+    font-weight: 700;
+    color: #F0EDE8;
   }
 
   .print-header-period {
-    font-size: 12px;
-    color: #555;
+    font-size: 11px;
+    color: #666;
     margin-top: 2px;
   }
 
-  .kpi-badge.positive { background: rgba(0,100,50,0.12) !important; color: #006432 !important; }
-  .kpi-badge.negative { background: rgba(180,0,0,0.1) !important; color: #cc0000 !important; }
+  /* ── KPI cards ─────────────────────────────────────────────── */
+  .kpi-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .kpi-card {
+    background: #141414 !important;
+    border: 1px solid #222 !important;
+    padding: 14px !important;
+    page-break-inside: avoid;
+  }
+
+  .kpi-value { font-size: 20px !important; }
+  .kpi-label { font-size: 9px !important; }
+
+  /* ── Badges ────────────────────────────────────────────────── */
+  .kpi-badge.positive { background: rgba(0,255,106,0.15) !important; color: #00FF6A !important; }
+  .kpi-badge.negative { background: rgba(255,59,59,0.15) !important; color: #FF3B3B !important; }
+
+  /* ── Tables ────────────────────────────────────────────────── */
+  .table-wrapper {
+    background: #111111 !important;
+    border: 1px solid #222 !important;
+    page-break-inside: auto;
+  }
+
+  .data-table { font-size: 10px; }
+
+  .data-table thead tr { background: #181818 !important; }
+
+  .data-table th,
+  .data-table td { padding: 7px 10px !important; }
+
+  .data-table thead { display: table-header-group; }
+  .data-table tr    { page-break-inside: avoid; }
+
+  .data-table tfoot tr td { background: #181818 !important; }
+
+  /* ── Editorial blocks ──────────────────────────────────────── */
+  .editorial-grid { grid-template-columns: 1fr 1fr !important; }
+
+  .editorial-block {
+    background: #111 !important;
+    border-color: #222 !important;
+  }
+
+  /* ── Section labels ────────────────────────────────────────── */
+  .section-label { color: #666 !important; }
+  .section-label::before { background: #00FF6A !important; }
+
+  /* ── Thumbnail cells ───────────────────────────────────────── */
+  .ad-thumb { width: 36px !important; height: 36px !important; }
 }
 
 .print-header { display: none; }

@@ -438,8 +438,43 @@ function renderAdSetTable(rows, currency) {
   return renderSortableTable(tableId, cols, rows, totals, c);
 }
 
+/* ── Fetch Ad Thumbnails ───────────────────────────────────── */
+async function fetchAdThumbnails(adAccountId) {
+  try {
+    let all = [];
+    let next = null;
+    do {
+      let data;
+      if (next) {
+        const res = await fetch(next);
+        data = await res.json();
+        if (data.error) throw new Error(data.error.message);
+      } else {
+        data = await apiGet(`${adAccountId}/ads`, {
+          fields: "id,name,creative{thumbnail_url,object_type}",
+          limit: 200
+        });
+      }
+      if (data.data) all = all.concat(data.data);
+      next = data.paging?.next || null;
+    } while (next);
+
+    const map = {};
+    for (const ad of all) {
+      map[ad.id] = {
+        thumbnailUrl: ad.creative?.thumbnail_url || null,
+        isVideo: (ad.creative?.object_type || "").toUpperCase() === "VIDEO"
+      };
+    }
+    return map;
+  } catch (e) {
+    console.warn("Thumbnail fetch failed (non-fatal):", e.message);
+    return {};
+  }
+}
+
 /* ── Render Ad Table ───────────────────────────────────────── */
-function buildAdRows(rows, currency) {
+function buildAdRows(rows, thumbnails, currency) {
   return rows.map(r => {
     const spend       = parseFloat(r.spend || 0);
     const purchases   = getAction(r, PURCHASE_ACTION);
@@ -460,7 +495,18 @@ function buildAdRows(rows, currency) {
 
     const cpm         = parseFloat(r.cpm || 0);
     const frequency   = parseFloat(r.frequency || 0);
-    return { name: r.ad_name || "—", spend, purchases, roas, cpPurchase, cpCheckout, cpCart, cpClick, cpm, frequency };
+
+    // Thumbnail from separate ads endpoint, matched by ad_id
+    const thumb       = thumbnails?.[r.ad_id] || {};
+
+    return {
+      name: r.ad_name || "—",
+      spend, purchases, roas,
+      cpPurchase, cpCheckout, cpCart, cpClick,
+      cpm, frequency,
+      thumbnailUrl: thumb.thumbnailUrl || null,
+      isVideo:      thumb.isVideo      || false
+    };
   });
 }
 
@@ -469,7 +515,27 @@ function renderAdTable(rows, currency) {
   const tableId = "tbl-ad";
   const nullFmt = (fn) => v => v != null ? fn(v) : "—";
   const cols = [
-    { key: "name",       label: "Ad",                  numeric: false },
+    {
+      key: "name",
+      label: "Ad",
+      numeric: false,
+      render(val, row) {
+        const thumb = row.thumbnailUrl
+          ? `<div class="ad-thumb-video-badge" style="${row.isVideo ? "" : "display:contents"}">
+               <img class="ad-thumb" src="${row.thumbnailUrl}"
+                    loading="lazy"
+                    onerror="this.parentElement.replaceWith(this.parentElement.nextElementSibling)">
+             </div>
+             <div class="ad-thumb-placeholder" style="display:none"></div>`
+          : `<div class="ad-thumb-placeholder">
+               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                 <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                 <polyline points="21 15 16 10 5 21"/>
+               </svg>
+             </div>`;
+        return `<div class="ad-thumb-cell">${thumb}<span class="ad-name-text">${val}</span></div>`;
+      }
+    },
     { key: "spend",      label: "Amount Spent",        numeric: true, fmt: v => formatCurrency(v, c) },
     { key: "purchases",  label: "Purchases",           numeric: true, fmt: v => formatNum(v, 0) },
     { key: "roas",       label: "Purchase ROAS",       numeric: true, fmt: formatRoas },
@@ -520,10 +586,12 @@ function renderSortableTable(tableId, cols, rows, totals, currency) {
 
   const bodyRows = sorted.map(row => {
     const cells = cols.map(col => {
-      const val = row[col.key];
-      const fmt = col.fmt || (v => v);
-      const cls = col.numeric ? "td-num" : "td-name";
-      return `<td class="${cls}">${fmt(val)}</td>`;
+      const val  = row[col.key];
+      const cell = col.render
+        ? col.render(val, row)
+        : (col.fmt || (v => v))(val);
+      const cls  = col.numeric ? "td-num" : "td-name";
+      return `<td class="${cls}">${cell}</td>`;
     }).join("");
     return `<tr>${cells}</tr>`;
   }).join("");
@@ -674,19 +742,20 @@ async function loadReport() {
   const client = currentClient;
 
   try {
-    const [accCurr, accPrev, campaigns, adsets, ads] = await Promise.all([
+    const [accCurr, accPrev, campaigns, adsets, ads, thumbnails] = await Promise.all([
       fetchInsights(client.adAccountId, "account",  { since: dates.since,     until: dates.until }),
       fetchInsights(client.adAccountId, "account",  { since: dates.compSince, until: dates.compUntil }),
       fetchInsights(client.adAccountId, "campaign", { since: dates.since,     until: dates.until }, ["campaign_name"]),
       fetchInsights(client.adAccountId, "adset",    { since: dates.since,     until: dates.until }, ["adset_name"]),
-      fetchInsights(client.adAccountId, "ad",       { since: dates.since,     until: dates.until }, ["ad_name"])
+      fetchInsights(client.adAccountId, "ad",       { since: dates.since,     until: dates.until }, ["ad_name", "ad_id"]),
+      fetchAdThumbnails(client.adAccountId)
     ]);
 
-    _accountData  = buildAccountMetrics(accCurr,  client.currency);
-    _accountPrev  = buildAccountMetrics(accPrev,   client.currency);
-    _campaignData = buildCampaignRows(campaigns,   client.currency);
-    _adsetData    = buildAdSetRows(adsets,          client.currency);
-    _adData       = buildAdRows(ads,                client.currency);
+    _accountData  = buildAccountMetrics(accCurr,    client.currency);
+    _accountPrev  = buildAccountMetrics(accPrev,     client.currency);
+    _campaignData = buildCampaignRows(campaigns,     client.currency);
+    _adsetData    = buildAdSetRows(adsets,            client.currency);
+    _adData       = buildAdRows(ads, thumbnails,      client.currency);
 
     renderReport();
   } catch (err) {
