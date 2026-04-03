@@ -187,15 +187,44 @@ function getCostPerAction(row, actionType) {
 }
 
 function getOutboundClicks(row) {
-  const oc = row.outbound_clicks || [];
-  const found = oc.find(a => a.action_type === OUTBOUND_CLICK);
-  return found ? parseFloat(found.value) : 0;
+  // Try outbound_clicks array — Meta returns {action_type, value} pairs
+  const oc = row.outbound_clicks;
+  if (Array.isArray(oc) && oc.length > 0) {
+    const found = oc.find(a =>
+      a.action_type === "link_click" || a.action_type === "outbound_click"
+    );
+    if (found) return parseFloat(found.value) || 0;
+    // Only one entry with a different action_type — use it anyway
+    if (oc.length === 1) return parseFloat(oc[0].value) || 0;
+  }
+  // Flat number fallback (some API versions / breakdowns return a scalar)
+  if (oc != null && !Array.isArray(oc) && !isNaN(parseFloat(oc))) {
+    return parseFloat(oc);
+  }
+  // Last resort: pull link_click from the generic actions array
+  const actions = row.actions || [];
+  const lc = actions.find(a => a.action_type === "link_click");
+  if (lc) return parseFloat(lc.value) || 0;
+  return 0;
 }
 
 function getOutboundCtr(row) {
-  const ctr = row.outbound_clicks_ctr || [];
-  const found = ctr.find(a => a.action_type === OUTBOUND_CLICK);
-  return found ? parseFloat(found.value) : 0;
+  // Try the dedicated outbound_clicks_ctr field first
+  const ctrField = row.outbound_clicks_ctr;
+  if (Array.isArray(ctrField) && ctrField.length > 0) {
+    const found = ctrField.find(a =>
+      a.action_type === "link_click" || a.action_type === "outbound_click"
+    );
+    if (found) return parseFloat(found.value) || 0;
+    if (ctrField.length === 1) return parseFloat(ctrField[0].value) || 0;
+  }
+  if (ctrField != null && !Array.isArray(ctrField) && !isNaN(parseFloat(ctrField))) {
+    return parseFloat(ctrField);
+  }
+  // Calculate manually: outbound_clicks / impressions * 100
+  const clicks = getOutboundClicks(row);
+  const impressions = parseFloat(row.impressions || 0);
+  return impressions > 0 ? (clicks / impressions) * 100 : 0;
 }
 
 function parseRoas(row) {
@@ -327,15 +356,14 @@ function renderKPIs(metrics, prevMetrics, currency) {
 /* ── Render Campaign Table ─────────────────────────────────── */
 function buildCampaignRows(rows, currency) {
   return rows.map(r => {
-    const spend       = parseFloat(r.spend || 0);
-    const impressions = parseFloat(r.impressions || 0);
-    const roas        = parseRoas(r);
-    const outClicks   = getOutboundClicks(r);
-    const ctr         = impressions > 0 ? (outClicks / impressions) * 100 : 0;
-    const cpm         = parseFloat(r.cpm || 0);
-    const frequency   = parseFloat(r.frequency || 0);
-    const purchases   = getAction(r, PURCHASE_ACTION);
-    const convRate    = outClicks > 0 ? (purchases / outClicks) * 100 : 0;
+    const spend     = parseFloat(r.spend || 0);
+    const roas      = parseRoas(r);
+    const outClicks = getOutboundClicks(r);
+    const ctr       = getOutboundCtr(r);        // uses full fallback chain
+    const cpm       = parseFloat(r.cpm || 0);
+    const frequency = parseFloat(r.frequency || 0);
+    const purchases = getAction(r, PURCHASE_ACTION);
+    const convRate  = outClicks > 0 ? (purchases / outClicks) * 100 : 0;
     return { name: r.campaign_name || "—", spend, roas, ctr, cpm, frequency, convRate };
   });
 }
@@ -371,14 +399,12 @@ function renderCampaignTable(rows, currency) {
 /* ── Render Ad Set Table ───────────────────────────────────── */
 function buildAdSetRows(rows, currency) {
   return rows.map(r => {
-    const spend       = parseFloat(r.spend || 0);
-    const impressions = parseFloat(r.impressions || 0);
-    const revenue     = getActionValue(r, PURCHASE_ACTION);
-    const roas        = parseRoas(r);
-    const outClicks   = getOutboundClicks(r);
-    const ctr         = impressions > 0 ? (outClicks / impressions) * 100 : 0;
-    const cpm         = parseFloat(r.cpm || 0);
-    const frequency   = parseFloat(r.frequency || 0);
+    const spend     = parseFloat(r.spend || 0);
+    const revenue   = getActionValue(r, PURCHASE_ACTION);
+    const roas      = parseRoas(r);
+    const ctr       = getOutboundCtr(r);        // uses full fallback chain
+    const cpm       = parseFloat(r.cpm || 0);
+    const frequency = parseFloat(r.frequency || 0);
     return { name: r.adset_name || "—", spend, revenue, roas, ctr, cpm, frequency };
   });
 }
