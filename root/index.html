@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Root — Meta Ads Report | Scale Science</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300;1,9..40,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../shared/styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" defer></script>
+</head>
+<body>
+
+<!-- ── Token Screen ─────────────────────────────────────────── -->
+<div id="token-screen">
+  <div class="token-card">
+    <svg class="token-logo" viewBox="0 0 200 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="32" font-family="'Syne', sans-serif" font-size="32" font-weight="800" fill="#F0EDE8">Scale</text>
+      <rect x="112" y="0" width="88" height="40" rx="4" fill="#F0EDE8"/>
+      <text x="120" y="28" font-family="'Syne', sans-serif" font-size="24" font-weight="800" fill="#0A0A0A">Sci</text>
+    </svg>
+    <h2>Connect Meta Ads</h2>
+    <p>Paste your Meta User Access Token below to load live campaign data. Your token is stored locally and never sent to any server.</p>
+    <label for="token-input">Meta User Access Token</label>
+    <textarea id="token-input" class="token-input" placeholder="EAAhmSeA3md..."></textarea>
+    <button id="token-submit" class="btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      Connect &amp; Load Report
+    </button>
+  </div>
+</div>
+
+<!-- ── Navigation ───────────────────────────────────────────── -->
+<nav id="nav">
+  <svg class="nav-logo" viewBox="0 0 200 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <text x="0" y="28" font-family="'Syne', sans-serif" font-size="28" font-weight="800" fill="#F0EDE8">Scale</text>
+    <rect x="102" y="0" width="76" height="36" rx="3" fill="#F0EDE8"/>
+    <text x="109" y="25" font-family="'Syne', sans-serif" font-size="21" font-weight="800" fill="#0A0A0A">Sci</text>
+  </svg>
+  <span class="nav-client client-name">Root</span>
+  <div class="nav-right no-print">
+    <div class="date-select-wrapper">
+      <select class="date-select" id="date-range-select">
+        <option value="last_7d" selected>Last 7 days</option>
+        <option value="last_14d">Last 14 days</option>
+        <option value="last_30d">Last 30 days</option>
+        <option value="last_90d">Last 90 days</option>
+        <option value="this_month">This month</option>
+        <option value="custom">Custom range</option>
+      </select>
+    </div>
+    <button class="btn-export" id="btn-export">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      Export PDF
+    </button>
+    <button class="btn-ghost" id="btn-disconnect">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      Disconnect
+    </button>
+  </div>
+</nav>
+
+<!-- Custom date row -->
+<div class="custom-date-row no-print" id="custom-date-row">
+  <label>From</label>
+  <input type="date" id="custom-since" />
+  <label>To</label>
+  <input type="date" id="custom-until" />
+  <button class="btn-apply" id="apply-custom">Apply</button>
+</div>
+
+<!-- ── Main Report ───────────────────────────────────────────── -->
+<main id="report">
+
+  <!-- Print-only header -->
+  <div class="print-header" id="print-header">
+    <div>
+      <div class="print-header-title">Root — Meta Ads Report | Scale Science</div>
+      <div class="print-header-period" id="print-period"></div>
+    </div>
+  </div>
+
+  <!-- Report Header -->
+  <div class="report-header">
+    <div class="report-header-left">
+      <h1 class="report-title"><span class="client-name">Root</span> — Meta Ads</h1>
+      <div class="report-subtitle">Performance Report · Scale Science</div>
+      <div class="report-period">
+        <span id="period-label"></span>
+        <span id="compare-label" style="color:var(--text-dim); margin-left:8px;font-size:12px;"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div id="loading-state">
+    <div class="skeleton-kpi-grid">
+      <div class="skeleton skeleton-kpi"></div>
+      <div class="skeleton skeleton-kpi"></div>
+      <div class="skeleton skeleton-kpi"></div>
+      <div class="skeleton skeleton-kpi"></div>
+      <div class="skeleton skeleton-kpi"></div>
+      <div class="skeleton skeleton-kpi"></div>
+      <div class="skeleton skeleton-kpi"></div>
+      <div class="skeleton skeleton-kpi"></div>
+    </div>
+    <div class="skeleton skeleton-table"></div>
+    <div class="skeleton skeleton-table"></div>
+  </div>
+
+  <!-- Error State -->
+  <div id="error-state">
+    <div class="error-icon">⚠</div>
+    <h3>Failed to load data</h3>
+    <p id="error-message">An error occurred while fetching Meta Ads data.</p>
+    <button class="btn-danger" id="btn-reenter">Re-enter Token</button>
+  </div>
+
+  <!-- Report Content -->
+  <div id="report-content" style="display:none;">
+
+    <!-- Summary & Next Steps -->
+    <div class="editorial-grid">
+      <div class="editorial-block">
+        <div class="editorial-block-header">
+          <span class="editorial-block-title">Summary</span>
+          <div class="editorial-toolbar no-print">
+            <button class="toolbar-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+            <button class="toolbar-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+            <button class="toolbar-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+            <div class="toolbar-divider"></div>
+            <button class="toolbar-btn" data-cmd="createLink" title="Insert Link">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="toolbar-btn" data-cmd="insertUnorderedList" title="Bullet list">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+        <div
+          class="editorial-content"
+          id="editorial-summary"
+          contenteditable="true"
+          data-placeholder="Click to add a summary of this period's performance…"
+        ></div>
+      </div>
+
+      <div class="editorial-block">
+        <div class="editorial-block-header">
+          <span class="editorial-block-title">Next Steps</span>
+          <div class="editorial-toolbar no-print">
+            <button class="toolbar-btn" data-cmd="bold" title="Bold"><b>B</b></button>
+            <button class="toolbar-btn" data-cmd="italic" title="Italic"><i>I</i></button>
+            <button class="toolbar-btn" data-cmd="underline" title="Underline"><u>U</u></button>
+            <div class="toolbar-divider"></div>
+            <button class="toolbar-btn" data-cmd="createLink" title="Insert Link">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="toolbar-btn" data-cmd="insertUnorderedList" title="Bullet list">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1.5" fill="currentColor"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/></svg>
+            </button>
+          </div>
+        </div>
+        <div
+          class="editorial-content"
+          id="editorial-nextsteps"
+          contenteditable="true"
+          data-placeholder="Click to add recommended next steps…"
+        ></div>
+      </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-label">Performance Overview</div>
+      </div>
+      <div class="kpi-grid" id="kpi-grid"></div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <!-- Campaign Table -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-label">Campaign Performance</div>
+      </div>
+      <div class="table-wrapper">
+        <div id="campaign-table-container"></div>
+      </div>
+    </div>
+
+    <!-- Ad Set Table -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-label">Ad Set Performance</div>
+      </div>
+      <div class="table-wrapper">
+        <div id="adset-table-container"></div>
+      </div>
+    </div>
+
+    <!-- Ad Table -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-label">Ad Preview Performance</div>
+      </div>
+      <div class="table-wrapper">
+        <div id="ad-table-container"></div>
+      </div>
+    </div>
+
+  </div><!-- /report-content -->
+</main>
+
+<script src="../config.js"></script>
+<script src="../shared/report.js"></script>
+<script src="../shared/pdf-export.js"></script>
+<script>
+  window.CLIENT_KEY = "root";
+  document.addEventListener("DOMContentLoaded", () => initReport(window.CLIENT_KEY));
+</script>
+</body>
+</html>

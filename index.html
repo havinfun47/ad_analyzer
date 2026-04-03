@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scale Science — Meta Ads Reports</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0A0A0A; --surface: #111; --border: #222;
+      --text: #F0EDE8; --muted: #666; --accent: #00FF6A;
+      --font-head: 'Syne', sans-serif; --font-body: 'DM Sans', sans-serif;
+    }
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .logo {
+      margin-bottom: 48px;
+    }
+    .eyebrow {
+      font-family: var(--font-head);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    h1 {
+      font-family: var(--font-head);
+      font-size: clamp(32px, 6vw, 56px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      text-align: center;
+      line-height: 1.1;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+    .subtitle {
+      font-size: 16px;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 56px;
+      max-width: 400px;
+    }
+    .client-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      width: 100%;
+      max-width: 760px;
+    }
+    .client-card {
+      display: block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px 24px;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.2s, transform 0.15s, background 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .client-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.2s;
+    }
+    .client-card:hover {
+      border-color: #333;
+      background: #151515;
+      transform: translateY(-2px);
+    }
+    .client-card:hover::before { transform: scaleX(1); }
+    .card-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+      font-family: var(--font-head);
+    }
+    .card-name {
+      font-family: var(--font-head);
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .card-account {
+      font-size: 11px;
+      color: #333;
+      font-family: monospace;
+    }
+    .card-arrow {
+      position: absolute;
+      top: 50%;
+      right: 20px;
+      transform: translateY(-50%);
+      color: #2a2a2a;
+      font-size: 20px;
+      transition: color 0.2s, right 0.2s;
+    }
+    .client-card:hover .card-arrow { color: var(--accent); right: 16px; }
+    footer {
+      margin-top: 64px;
+      font-size: 12px;
+      color: #2a2a2a;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <svg viewBox="0 0 240 44" fill="none" xmlns="http://www.w3.org/2000/svg" height="36">
+      <text x="0" y="34" font-family="'Syne', sans-serif" font-size="34" font-weight="800" fill="#F0EDE8">Scale</text>
+      <rect x="122" y="2" width="88" height="40" rx="4" fill="#F0EDE8"/>
+      <text x="130" y="30" font-family="'Syne', sans-serif" font-size="24" font-weight="800" fill="#0A0A0A">Sci</text>
+    </svg>
+  </div>
+
+  <div class="eyebrow">Client Reporting</div>
+  <h1>Meta Ads<br/>Reports</h1>
+  <p class="subtitle">Select a client to view their live Meta Ads performance dashboard.</p>
+
+  <div class="client-grid">
+    <a href="./root/" class="client-card">
+      <div class="card-label">Client</div>
+      <div class="card-name">Root</div>
+      <div class="card-account">act_575199276244807</div>
+      <span class="card-arrow">→</span>
+    </a>
+    <a href="./toothpod/" class="client-card">
+      <div class="card-label">Client</div>
+      <div class="card-name">Toothpod</div>
+      <div class="card-account">act_727374130071249</div>
+      <span class="card-arrow">→</span>
+    </a>
+    <a href="./mycosoul/" class="client-card">
+      <div class="card-label">Client</div>
+      <div class="card-name">myco:soul</div>
+      <div class="card-account">act_521928957251738</div>
+      <span class="card-arrow">→</span>
+    </a>
+  </div>
+
+  <footer>Scale Science &mdash; Internal Use Only</footer>
+</body>
+</html>
