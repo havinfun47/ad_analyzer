@@ -3,7 +3,7 @@
    Dark Editorial Luxury Design System
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300;1,9..40,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300;1,9..40,400&display=swap');
 
 /* ── Reset & Base ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -25,7 +25,7 @@
   --red-dim:     rgba(255,59,59,0.12);
   --yellow:      #FFD166;
   --white:       #FFFFFF;
-  --font-head:   'Syne', sans-serif;
+  --font-head:   'Space Grotesk', sans-serif;
   --font-body:   'DM Sans', sans-serif;
   --radius:      6px;
   --radius-lg:   10px;

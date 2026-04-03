@@ -327,14 +327,15 @@ function renderKPIs(metrics, prevMetrics, currency) {
 /* ── Render Campaign Table ─────────────────────────────────── */
 function buildCampaignRows(rows, currency) {
   return rows.map(r => {
-    const spend     = parseFloat(r.spend || 0);
-    const roas      = parseRoas(r);
-    const ctr       = getOutboundCtr(r);
-    const cpm       = parseFloat(r.cpm || 0);
-    const frequency = parseFloat(r.frequency || 0);
-    const purchases = getAction(r, PURCHASE_ACTION);
-    const outClicks = getOutboundClicks(r);
-    const convRate  = outClicks > 0 ? (purchases / outClicks) * 100 : 0;
+    const spend       = parseFloat(r.spend || 0);
+    const impressions = parseFloat(r.impressions || 0);
+    const roas        = parseRoas(r);
+    const outClicks   = getOutboundClicks(r);
+    const ctr         = impressions > 0 ? (outClicks / impressions) * 100 : 0;
+    const cpm         = parseFloat(r.cpm || 0);
+    const frequency   = parseFloat(r.frequency || 0);
+    const purchases   = getAction(r, PURCHASE_ACTION);
+    const convRate    = outClicks > 0 ? (purchases / outClicks) * 100 : 0;
     return { name: r.campaign_name || "—", spend, roas, ctr, cpm, frequency, convRate };
   });
 }
@@ -370,12 +371,14 @@ function renderCampaignTable(rows, currency) {
 /* ── Render Ad Set Table ───────────────────────────────────── */
 function buildAdSetRows(rows, currency) {
   return rows.map(r => {
-    const spend     = parseFloat(r.spend || 0);
-    const revenue   = getActionValue(r, PURCHASE_ACTION);
-    const roas      = parseRoas(r);
-    const ctr       = getOutboundCtr(r);
-    const cpm       = parseFloat(r.cpm || 0);
-    const frequency = parseFloat(r.frequency || 0);
+    const spend       = parseFloat(r.spend || 0);
+    const impressions = parseFloat(r.impressions || 0);
+    const revenue     = getActionValue(r, PURCHASE_ACTION);
+    const roas        = parseRoas(r);
+    const outClicks   = getOutboundClicks(r);
+    const ctr         = impressions > 0 ? (outClicks / impressions) * 100 : 0;
+    const cpm         = parseFloat(r.cpm || 0);
+    const frequency   = parseFloat(r.frequency || 0);
     return { name: r.adset_name || "—", spend, revenue, roas, ctr, cpm, frequency };
   });
 }
@@ -414,11 +417,21 @@ function buildAdRows(rows, currency) {
   return rows.map(r => {
     const spend       = parseFloat(r.spend || 0);
     const purchases   = getAction(r, PURCHASE_ACTION);
+    const checkouts   = getAction(r, CHECKOUT_ACTION);
+    const cartAdds    = getAction(r, CART_ACTION);
+    const outClicks   = getOutboundClicks(r);
     const roas        = parseRoas(r);
-    const cpPurchase  = getCostPerAction(r, PURCHASE_ACTION);
-    const cpCheckout  = getCostPerAction(r, CHECKOUT_ACTION);
-    const cpCart      = getCostPerAction(r, CART_ACTION);
-    const cpClick     = getCostPerAction(r, "link_click");
+
+    // Use API cost_per_action_type first; fall back to manual spend / conversions
+    const cpPurchase  = getCostPerAction(r, PURCHASE_ACTION)
+                        ?? (purchases > 0 ? spend / purchases : null);
+    const cpCheckout  = getCostPerAction(r, CHECKOUT_ACTION)
+                        ?? (checkouts > 0 ? spend / checkouts : null);
+    const cpCart      = getCostPerAction(r, CART_ACTION)
+                        ?? (cartAdds > 0 ? spend / cartAdds : null);
+    const cpClick     = getCostPerAction(r, "link_click")
+                        ?? (outClicks > 0 ? spend / outClicks : null);
+
     const cpm         = parseFloat(r.cpm || 0);
     const frequency   = parseFloat(r.frequency || 0);
     return { name: r.ad_name || "—", spend, purchases, roas, cpPurchase, cpCheckout, cpCart, cpClick, cpm, frequency };
