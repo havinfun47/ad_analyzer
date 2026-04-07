@@ -724,6 +724,14 @@ function initEditorialBlocks() {
       if (text) document.execCommand("insertText", false, text);
     });
 
+    // Tab = indent bullet, Shift+Tab = outdent bullet
+    el.addEventListener("keydown", e => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        document.execCommand(e.shiftKey ? "outdent" : "indent");
+      }
+    });
+
     // Handle image drag-drop
     el.addEventListener("dragover", e => e.preventDefault());
     el.addEventListener("drop", e => {
@@ -832,6 +840,11 @@ function renderReport() {
   } else if (kpiEl) {
     kpiEl.innerHTML = `<div class="empty-state"><h3>No data</h3><p>No metrics found for this period.</p></div>`;
   }
+
+  // Default sort: spend descending (only set if user hasn't manually sorted)
+  if (!sortState["tbl-campaign"]) sortState["tbl-campaign"] = { col: "spend", dir: -1 };
+  if (!sortState["tbl-adset"])    sortState["tbl-adset"]    = { col: "spend", dir: -1 };
+  if (!sortState["tbl-ad"])       sortState["tbl-ad"]       = { col: "spend", dir: -1 };
 
   // Tables
   refreshTables();

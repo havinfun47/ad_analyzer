@@ -557,6 +557,30 @@ input[type="date"]:focus { border-color: var(--accent); }
   text-decoration-color: rgba(0,255,106,0.4);
 }
 
+.editorial-content ul,
+.editorial-content ol {
+  padding-left: 22px;
+  margin: 4px 0;
+}
+
+.editorial-content li {
+  margin: 3px 0;
+  padding-left: 2px;
+}
+
+/* Nested lists get progressive indent */
+.editorial-content ul ul,
+.editorial-content ol ol,
+.editorial-content ul ol,
+.editorial-content ol ul {
+  padding-left: 20px;
+  margin: 2px 0;
+}
+
+.editorial-content ul { list-style-type: disc; }
+.editorial-content ul ul { list-style-type: circle; }
+.editorial-content ul ul ul { list-style-type: square; }
+
 /* ── KPI Cards ────────────────────────────────────────────── */
 .kpi-grid {
   display: grid;
@@ -880,7 +904,7 @@ input[type="date"]:focus { border-color: var(--accent); }
    PRINT / PDF STYLES  — dark theme preserved
    ============================================================ */
 @media print {
-  @page { size: A4 landscape; margin: 10mm 14mm; }
+  @page { size: A4 landscape; margin: 10mm 20mm; }
 
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 
@@ -900,7 +924,7 @@ input[type="date"]:focus { border-color: var(--accent); }
   #error-state { display: none !important; }
 
   /* ── Layout ────────────────────────────────────────────────── */
-  #report { max-width: 100%; padding: 0; }
+  #report { max-width: 100%; padding: 0 6mm; }
   .report-header { margin-bottom: 20px; }
   .report-title  { font-size: 26px !important; }
   .section       { margin-bottom: 20px; }
