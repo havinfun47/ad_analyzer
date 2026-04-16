@@ -892,10 +892,93 @@ input[type="date"]:focus { border-color: var(--accent); }
 }
 [data-tooltip]:hover::after { opacity: 1; }
 
+/* ── Tab Bar ──────────────────────────────────────────────── */
+#tab-bar {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-head);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 14px 14px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Trends Section ───────────────────────────────────────── */
+#trends-content {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 40px 32px 80px;
+}
+
+.trends-header {
+  margin-bottom: 24px;
+}
+
+.trends-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.trends-toggle {
+  display: flex;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px;
+  gap: 2px;
+}
+
+.toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.toggle-btn:hover { color: var(--text); }
+.toggle-btn.active { background: var(--accent); color: #000; }
+
+.trends-period {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Responsive Nav ───────────────────────────────────────── */
 @media (max-width: 640px) {
   #nav { padding: 0 16px; }
-  #report { padding: 24px 16px 60px; }
+  #tab-bar { padding: 0 16px; }
+  #report, #trends-content { padding: 24px 16px 60px; }
   .report-title { font-size: 24px; }
   .nav-client { display: none; }
 }

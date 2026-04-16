@@ -957,6 +957,245 @@ function initTokenControls() {
   });
 }
 
+/* ============================================================
+   TRENDS PAGE
+   ============================================================ */
+
+let _trendsMode  = "weekly";
+let _trendsCache = {};   // { weekly: rows[], monthly: rows[] }
+
+/* ── Inject tab bar + trends section into DOM ─────────────── */
+function injectTrendsUI() {
+  const rc = document.getElementById("report-content");
+  if (!rc || document.getElementById("tab-bar")) return;
+
+  // Tab bar (before report-content, inside <main>)
+  const tabBar     = document.createElement("div");
+  tabBar.id        = "tab-bar";
+  tabBar.className = "no-print";
+  tabBar.innerHTML = `
+    <button class="tab-btn active" data-tab="report">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+        <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+        <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+        <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+      </svg>
+      Report
+    </button>
+    <button class="tab-btn" data-tab="trends">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
+      Trends
+    </button>`;
+  rc.before(tabBar);
+
+  // Trends content (after report-content, inside <main>)
+  const trendsDiv       = document.createElement("div");
+  trendsDiv.id          = "trends-content";
+  trendsDiv.className   = "no-print";
+  trendsDiv.style.display = "none";
+  trendsDiv.innerHTML   = `
+    <div class="trends-header">
+      <div class="trends-title-row">
+        <div class="section-label">Performance Trends</div>
+        <div class="trends-toggle">
+          <button class="toggle-btn active" data-mode="weekly">Weekly</button>
+          <button class="toggle-btn" data-mode="monthly">Monthly</button>
+        </div>
+      </div>
+    </div>
+    <div id="trends-table-wrap"></div>`;
+  rc.after(trendsDiv);
+}
+
+/* ── Tab + toggle event handling ──────────────────────────── */
+function initTabs() {
+  document.addEventListener("click", e => {
+    // Main tabs
+    const tabBtn = e.target.closest(".tab-btn[data-tab]");
+    if (tabBtn) {
+      const tab = tabBtn.dataset.tab;
+      document.querySelectorAll(".tab-btn[data-tab]").forEach(b =>
+        b.classList.toggle("active", b === tabBtn));
+      document.getElementById("report-content").style.display =
+        tab === "report" ? "" : "none";
+      const tc = document.getElementById("trends-content");
+      if (tc) tc.style.display = tab === "trends" ? "" : "none";
+      if (tab === "trends" && !_trendsCache[_trendsMode]) loadTrends(_trendsMode);
+      return;
+    }
+
+    // Weekly/Monthly toggle
+    const toggleBtn = e.target.closest(".toggle-btn[data-mode]");
+    if (toggleBtn) {
+      const mode = toggleBtn.dataset.mode;
+      _trendsMode = mode;
+      document.querySelectorAll(".toggle-btn[data-mode]").forEach(b =>
+        b.classList.toggle("active", b === toggleBtn));
+      if (_trendsCache[mode]) {
+        renderTrendsFromCache();
+      } else {
+        loadTrends(mode);
+      }
+    }
+  });
+}
+
+/* ── Fetch time-series insights ───────────────────────────── */
+async function fetchTrendsInsights(mode) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  const since = new Date(today);
+  if (mode === "weekly") {
+    since.setDate(today.getDate() - 91);   // ~13 weeks
+  } else {
+    since.setFullYear(today.getFullYear() - 1); // 12 months
+  }
+
+  const fields = [
+    "spend", "impressions", "cpm", "frequency",
+    "outbound_clicks", "action_values", "actions",
+    "date_start", "date_stop"
+  ].join(",");
+
+  const data = await apiGet(`${currentClient.adAccountId}/insights`, {
+    fields,
+    time_range:     JSON.stringify({ since: formatDate(since), until: formatDate(yesterday) }),
+    time_increment: mode === "weekly" ? 7 : "monthly",
+    level:          "account",
+    limit:          100
+  });
+
+  return data.data || [];
+}
+
+/* ── Build display rows from API response ─────────────────── */
+function buildTrendsRows(rows) {
+  return rows
+    .map(r => {
+      const spend      = parseFloat(r.spend || 0);
+      const revenue    = getActionValue(r, PURCHASE_ACTION);
+      const purchases  = getAction(r, PURCHASE_ACTION);
+      const outClicks  = getOutboundClicks(r);
+      const impressions = parseFloat(r.impressions || 0);
+
+      return {
+        dateStart:  r.date_start,
+        dateStop:   r.date_stop,
+        spend,
+        revenue,
+        roas:       spend > 0 ? revenue / spend : 0,
+        cpa:        purchases > 0 ? spend / purchases : null,
+        ctr:        impressions > 0 ? (outClicks / impressions) * 100 : 0,
+        cpm:        parseFloat(r.cpm || 0),
+        frequency:  parseFloat(r.frequency || 0)
+      };
+    })
+    .sort((a, b) => b.dateStart.localeCompare(a.dateStart)); // most recent first
+}
+
+/* ── Format period label ──────────────────────────────────── */
+function formatTrendsPeriod(dateStart, dateStop, mode) {
+  if (mode === "monthly") {
+    return parseDateStr(dateStart)
+      .toLocaleDateString("en-CA", { month: "long", year: "numeric" });
+  }
+  const sf = parseDateStr(dateStart).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+  const ef = parseDateStr(dateStop).toLocaleDateString("en-CA",  { month: "short", day: "numeric" });
+  return `${sf} – ${ef}`;
+}
+
+/* ── Render trends table HTML ─────────────────────────────── */
+function renderTrendsTable(rows, mode) {
+  const c = currentClient?.currency || "CAD";
+  if (!rows.length) return `<div class="table-empty">No data for this period.</div>`;
+
+  const cols = [
+    { label: "Period",           key: "period",    num: false },
+    { label: "Amount Spent",     key: "spend",     num: true,  fmt: v => formatCurrency(v, c) },
+    { label: "Revenue",          key: "revenue",   num: true,  fmt: v => formatCurrency(v, c) },
+    { label: "ROAS",             key: "roas",      num: true,  fmt: formatRoas },
+    { label: "Cost / Purchase",  key: "cpa",       num: true,  fmt: v => v != null ? formatCurrency(v, c) : "—" },
+    { label: "Outbound CTR",     key: "ctr",       num: true,  fmt: formatPct },
+    { label: "CPM",              key: "cpm",       num: true,  fmt: v => formatCurrency(v, c) },
+    { label: "Frequency",        key: "frequency", num: true,  fmt: v => formatNum(v, 2) }
+  ];
+
+  const headers = cols.map(col =>
+    `<th class="${col.num ? "th-num" : ""}">${col.label}</th>`
+  ).join("");
+
+  const bodyRows = rows.map(row => {
+    const cells = cols.map(col => {
+      if (col.key === "period") {
+        return `<td class="td-name trends-period">${formatTrendsPeriod(row.dateStart, row.dateStop, mode)}</td>`;
+      }
+      return `<td class="td-num">${col.fmt(row[col.key])}</td>`;
+    }).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+
+  // Totals / averages
+  const totalSpend   = rows.reduce((s, r) => s + r.spend, 0);
+  const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
+  const totalPurch   = rows.reduce((s, r) => s + (r.cpa != null ? r.spend / r.cpa : 0), 0);
+  const foot = {
+    spend:     totalSpend,
+    revenue:   totalRevenue,
+    roas:      totalSpend > 0 ? totalRevenue / totalSpend : 0,
+    cpa:       totalPurch > 0 ? totalSpend / totalPurch : null,
+    ctr:       rows.reduce((s, r) => s + r.ctr, 0)       / (rows.length || 1),
+    cpm:       rows.reduce((s, r) => s + r.cpm, 0)       / (rows.length || 1),
+    frequency: rows.reduce((s, r) => s + r.frequency, 0) / (rows.length || 1)
+  };
+
+  const footCells = cols.map(col => {
+    if (col.key === "period") return `<td class="td-name">Total / Avg</td>`;
+    return `<td class="td-num">${col.fmt(foot[col.key])}</td>`;
+  }).join("");
+
+  return `
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr>${headers}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+        <tfoot><tr>${footCells}</tr></tfoot>
+      </table>
+    </div>`;
+}
+
+/* ── Load + render orchestrator ───────────────────────────── */
+async function loadTrends(mode) {
+  const wrap = document.getElementById("trends-table-wrap");
+  if (!wrap) return;
+
+  wrap.innerHTML = `<div class="table-wrapper">
+    <div class="skeleton skeleton-table" style="height:240px;border-radius:0;"></div>
+  </div>`;
+
+  try {
+    const raw  = await fetchTrendsInsights(mode);
+    _trendsCache[mode] = buildTrendsRows(raw);
+    renderTrendsFromCache();
+  } catch (err) {
+    wrap.innerHTML = `<div class="table-wrapper" style="padding:32px;text-align:center;">
+      <p style="color:var(--red);font-size:13px;">${err.message}</p>
+    </div>`;
+  }
+}
+
+function renderTrendsFromCache() {
+  const wrap = document.getElementById("trends-table-wrap");
+  if (!wrap) return;
+  const rows = _trendsCache[_trendsMode] || [];
+  wrap.innerHTML = `<div class="table-wrapper">${renderTrendsTable(rows, _trendsMode)}</div>`;
+}
+
 /* ── Bootstrap ─────────────────────────────────────────────── */
 function initReport(clientKey) {
   if (!CLIENTS || !CLIENTS[clientKey]) {
@@ -979,6 +1218,8 @@ function initReport(clientKey) {
   initTokenControls();
   initDateControls();
   initEditorialBlocks();
+  injectTrendsUI();
+  initTabs();
 
   if (!getToken()) {
     showTokenScreen();
