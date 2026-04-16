@@ -1110,6 +1110,23 @@ function formatTrendsPeriod(dateStart, dateStop, mode) {
   return `${sf} – ${ef}`;
 }
 
+/* ── Trends cell colour helper ────────────────────────────── */
+function trendCellBg(value, min, max, lowerIsBetter) {
+  if (value == null || min == null || max == null || min === max) return "";
+  const range = max - min;
+  const ratio = (value - min) / range; // 0 = worst end, 1 = best end
+  const goodRatio = lowerIsBetter ? 1 - ratio : ratio;
+  // Only colour cells clearly in the top or bottom third
+  if (goodRatio >= 0.67) {
+    const alpha = 0.06 + (goodRatio - 0.67) / 0.33 * 0.14; // 0.06–0.20
+    return `background-color:rgba(0,255,106,${alpha.toFixed(3)});`;
+  } else if (goodRatio <= 0.33) {
+    const alpha = 0.06 + (0.33 - goodRatio) / 0.33 * 0.14;
+    return `background-color:rgba(255,59,59,${alpha.toFixed(3)});`;
+  }
+  return "";
+}
+
 /* ── Render trends table HTML ─────────────────────────────── */
 function renderTrendsTable(rows, mode) {
   const c = currentClient?.currency || "CAD";
@@ -1117,14 +1134,23 @@ function renderTrendsTable(rows, mode) {
 
   const cols = [
     { label: "Period",           key: "period",    num: false },
-    { label: "Amount Spent",     key: "spend",     num: true,  fmt: v => formatCurrency(v, c) },
-    { label: "Revenue",          key: "revenue",   num: true,  fmt: v => formatCurrency(v, c) },
-    { label: "ROAS",             key: "roas",      num: true,  fmt: formatRoas },
-    { label: "Cost / Purchase",  key: "cpa",       num: true,  fmt: v => v != null ? formatCurrency(v, c) : "—" },
-    { label: "Outbound CTR",     key: "ctr",       num: true,  fmt: formatPct },
-    { label: "CPM",              key: "cpm",       num: true,  fmt: v => formatCurrency(v, c) },
-    { label: "Frequency",        key: "frequency", num: true,  fmt: v => formatNum(v, 2) }
+    { label: "Amount Spent",     key: "spend",     num: true,  fmt: v => formatCurrency(v, c),          neutral: true },
+    { label: "Revenue",          key: "revenue",   num: true,  fmt: v => formatCurrency(v, c),          lowerIsBetter: false },
+    { label: "ROAS",             key: "roas",      num: true,  fmt: formatRoas,                         lowerIsBetter: false },
+    { label: "Cost / Purchase",  key: "cpa",       num: true,  fmt: v => v != null ? formatCurrency(v, c) : "—", lowerIsBetter: true },
+    { label: "Outbound CTR",     key: "ctr",       num: true,  fmt: formatPct,                          lowerIsBetter: false },
+    { label: "CPM",              key: "cpm",       num: true,  fmt: v => formatCurrency(v, c),          lowerIsBetter: true },
+    { label: "Frequency",        key: "frequency", num: true,  fmt: v => formatNum(v, 2),               lowerIsBetter: true }
   ];
+
+  // Pre-compute per-column min/max for numeric, non-neutral columns
+  const colRanges = {};
+  cols.forEach(col => {
+    if (!col.num || col.neutral || col.key === "period") return;
+    const vals = rows.map(r => r[col.key]).filter(v => v != null && isFinite(v));
+    if (vals.length < 2) return;
+    colRanges[col.key] = { min: Math.min(...vals), max: Math.max(...vals) };
+  });
 
   const headers = cols.map(col =>
     `<th class="${col.num ? "th-num" : ""}">${col.label}</th>`
@@ -1135,7 +1161,9 @@ function renderTrendsTable(rows, mode) {
       if (col.key === "period") {
         return `<td class="td-name trends-period">${formatTrendsPeriod(row.dateStart, row.dateStop, mode)}</td>`;
       }
-      return `<td class="td-num">${col.fmt(row[col.key])}</td>`;
+      const range = colRanges[col.key];
+      const bg = range ? trendCellBg(row[col.key], range.min, range.max, col.lowerIsBetter) : "";
+      return `<td class="td-num"${bg ? ` style="${bg}"` : ""}>${col.fmt(row[col.key])}</td>`;
     }).join("");
     return `<tr>${cells}</tr>`;
   }).join("");
