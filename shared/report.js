@@ -1084,16 +1084,21 @@ function buildTrendsRows(rows) {
       const outClicks  = getOutboundClicks(r);
       const impressions = parseFloat(r.impressions || 0);
 
+      const days = Math.max(1, Math.round(
+        (parseDateStr(r.date_stop) - parseDateStr(r.date_start)) / 86400000
+      ) + 1);
+
       return {
-        dateStart:  r.date_start,
-        dateStop:   r.date_stop,
+        dateStart:     r.date_start,
+        dateStop:      r.date_stop,
         spend,
+        avgDailySpend: spend / days,
         revenue,
-        roas:       spend > 0 ? revenue / spend : 0,
-        cpa:        purchases > 0 ? spend / purchases : null,
-        ctr:        impressions > 0 ? (outClicks / impressions) * 100 : 0,
-        cpm:        parseFloat(r.cpm || 0),
-        frequency:  parseFloat(r.frequency || 0)
+        roas:          spend > 0 ? revenue / spend : 0,
+        cpa:           purchases > 0 ? spend / purchases : null,
+        ctr:           impressions > 0 ? (outClicks / impressions) * 100 : 0,
+        cpm:           parseFloat(r.cpm || 0),
+        frequency:     parseFloat(r.frequency || 0)
       };
     })
     .sort((a, b) => b.dateStart.localeCompare(a.dateStart)); // most recent first
@@ -1134,8 +1139,9 @@ function renderTrendsTable(rows, mode) {
 
   const cols = [
     { label: "Period",           key: "period",    num: false },
-    { label: "Amount Spent",     key: "spend",     num: true,  fmt: v => formatCurrency(v, c),          neutral: true },
-    { label: "Revenue",          key: "revenue",   num: true,  fmt: v => formatCurrency(v, c),          lowerIsBetter: false },
+    { label: "Amount Spent",     key: "spend",         num: true,  fmt: v => formatCurrency(v, c),          neutral: true },
+    { label: "Avg Daily Spend",  key: "avgDailySpend", num: true,  fmt: v => formatCurrency(v, c),          neutral: true },
+    { label: "Revenue",          key: "revenue",       num: true,  fmt: v => formatCurrency(v, c),          lowerIsBetter: false },
     { label: "ROAS",             key: "roas",      num: true,  fmt: formatRoas,                         lowerIsBetter: false },
     { label: "Cost / Purchase",  key: "cpa",       num: true,  fmt: v => v != null ? formatCurrency(v, c) : "—", lowerIsBetter: true },
     { label: "Outbound CTR",     key: "ctr",       num: true,  fmt: formatPct,                          lowerIsBetter: false },
@@ -1173,8 +1179,9 @@ function renderTrendsTable(rows, mode) {
   const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);
   const totalPurch   = rows.reduce((s, r) => s + (r.cpa != null ? r.spend / r.cpa : 0), 0);
   const foot = {
-    spend:     totalSpend,
-    revenue:   totalRevenue,
+    spend:         totalSpend,
+    avgDailySpend: rows.reduce((s, r) => s + r.avgDailySpend, 0) / (rows.length || 1),
+    revenue:       totalRevenue,
     roas:      totalSpend > 0 ? totalRevenue / totalSpend : 0,
     cpa:       totalPurch > 0 ? totalSpend / totalPurch : null,
     ctr:       rows.reduce((s, r) => s + r.ctr, 0)       / (rows.length || 1),
