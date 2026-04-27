@@ -1174,7 +1174,8 @@ function buildTrendsRows(rows) {
         cpa:           purchases > 0 ? spend / purchases : null,
         ctr:           impressions > 0 ? (outClicks / impressions) * 100 : 0,
         cpm:           parseFloat(r.cpm || 0),
-        frequency:     parseFloat(r.frequency || 0)
+        frequency:     parseFloat(r.frequency || 0),
+        cvr:           outClicks > 0 ? (purchases / outClicks) * 100 : 0
       };
     })
     .sort((a, b) => b.dateStart.localeCompare(a.dateStart)); // most recent first
@@ -1222,7 +1223,8 @@ function renderTrendsTable(rows, mode) {
     { label: "Cost / Purchase",  key: "cpa",       num: true,  fmt: v => v != null ? formatCurrency(v, c) : "—", lowerIsBetter: true },
     { label: "Outbound CTR",     key: "ctr",       num: true,  fmt: formatPct,                          lowerIsBetter: false },
     { label: "CPM",              key: "cpm",       num: true,  fmt: v => formatCurrency(v, c),          lowerIsBetter: true },
-    { label: "Frequency",        key: "frequency", num: true,  fmt: v => formatNum(v, 2),               lowerIsBetter: true }
+    { label: "Frequency",        key: "frequency", num: true,  fmt: v => formatNum(v, 2),               lowerIsBetter: true },
+    { label: "Conv. Rate",       key: "cvr",       num: true,  fmt: formatPct,                          lowerIsBetter: false }
   ];
 
   // Pre-compute per-column min/max for numeric, non-neutral columns
@@ -1262,7 +1264,8 @@ function renderTrendsTable(rows, mode) {
     cpa:       totalPurch > 0 ? totalSpend / totalPurch : null,
     ctr:       rows.reduce((s, r) => s + r.ctr, 0)       / (rows.length || 1),
     cpm:       rows.reduce((s, r) => s + r.cpm, 0)       / (rows.length || 1),
-    frequency: rows.reduce((s, r) => s + r.frequency, 0) / (rows.length || 1)
+    frequency: rows.reduce((s, r) => s + r.frequency, 0) / (rows.length || 1),
+    cvr:       rows.reduce((s, r) => s + r.cvr, 0)       / (rows.length || 1)
   };
 
   const footCells = cols.map(col => {
