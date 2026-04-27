@@ -441,6 +441,22 @@ function renderAdSetTable(rows, currency) {
 /* ── Fetch Ad Thumbnails ───────────────────────────────────── */
 async function fetchAdThumbnails(adAccountId) {
   try {
+    const creativeFields = [
+      "thumbnail_url",
+      "image_url",
+      "image_hash",
+      "video_id",
+      "object_type",
+      "effective_object_story_id",
+      "asset_feed_spec{images{url,hash},videos{thumbnail_url,video_id}}",
+      "object_story_spec{" +
+        "link_data{picture,image_hash,child_attachments{picture,image_hash}}," +
+        "video_data{image_url,picture,thumbnail_url,video_id}," +
+        "template_data{picture,image_url,image_hash}," +
+        "photo_data{image_hash,url}" +
+      "}"
+    ].join(",");
+
     let all = [];
     let next = null;
     do {
@@ -451,7 +467,7 @@ async function fetchAdThumbnails(adAccountId) {
         if (data.error) throw new Error(data.error.message);
       } else {
         data = await apiGet(`${adAccountId}/ads`, {
-          fields: "id,name,creative{thumbnail_url,image_url,object_type,object_story_spec{link_data{picture},video_data{thumbnail_url}}}",
+          fields: `id,name,creative{${creativeFields}}`,
           limit: 200
         });
       }
@@ -459,21 +475,120 @@ async function fetchAdThumbnails(adAccountId) {
       next = data.paging?.next || null;
     } while (next);
 
+    // Pass 1: extract whatever URL we can immediately, collect unresolved hashes / story-ids / video-ids
     const map = {};
+    const neededHashes = new Set();
+    const neededStoryIds = new Set();
+    const neededVideoIds = new Set();
+
     for (const ad of all) {
-      const cr = ad.creative || {};
+      const cr  = ad.creative || {};
+      const oss = cr.object_story_spec || {};
+      const afs = cr.asset_feed_spec   || {};
       const objectType = (cr.object_type || "").toUpperCase();
-      // Try multiple fields — different ad formats populate different ones
-      const thumbnailUrl =
+      const isVideo = objectType === "VIDEO" ||
+        !!cr.video_id ||
+        !!oss.video_data?.video_id ||
+        !!(afs.videos && afs.videos.length);
+
+      // Try every known URL field, in priority order
+      const url =
         cr.thumbnail_url ||
-        cr.object_story_spec?.video_data?.thumbnail_url ||
-        cr.object_story_spec?.link_data?.picture ||
+        oss.video_data?.thumbnail_url ||
+        oss.video_data?.image_url ||
+        oss.video_data?.picture ||
+        oss.link_data?.picture ||
+        oss.link_data?.child_attachments?.[0]?.picture ||
+        oss.template_data?.picture ||
+        oss.template_data?.image_url ||
+        oss.photo_data?.url ||
+        afs.images?.[0]?.url ||
+        afs.videos?.[0]?.thumbnail_url ||
         cr.image_url ||
         null;
-      map[ad.id] = {
-        thumbnailUrl,
-        isVideo: objectType === "VIDEO"
-      };
+
+      const hash =
+        cr.image_hash ||
+        oss.link_data?.image_hash ||
+        oss.link_data?.child_attachments?.[0]?.image_hash ||
+        oss.template_data?.image_hash ||
+        oss.photo_data?.image_hash ||
+        afs.images?.[0]?.hash ||
+        null;
+
+      const videoId =
+        cr.video_id ||
+        oss.video_data?.video_id ||
+        afs.videos?.[0]?.video_id ||
+        null;
+
+      const storyId = cr.effective_object_story_id || null;
+
+      map[ad.id] = { thumbnailUrl: url, isVideo, _hash: !url ? hash : null,
+                     _videoId: !url ? videoId : null, _storyId: !url ? storyId : null };
+
+      if (!url) {
+        if (hash)    neededHashes.add(hash);
+        if (videoId) neededVideoIds.add(videoId);
+        if (storyId) neededStoryIds.add(storyId);
+      }
+    }
+
+    // Pass 2: resolve image_hash → URL via /adimages (batched)
+    if (neededHashes.size) {
+      try {
+        const hashes = [...neededHashes];
+        const res = await apiGet(`${adAccountId}/adimages`, {
+          hashes: JSON.stringify(hashes),
+          fields: "hash,permalink_url,url_128"
+        });
+        const byHash = {};
+        for (const im of (res.data || [])) {
+          byHash[im.hash] = im.url_128 || im.permalink_url;
+        }
+        for (const ad of Object.values(map)) {
+          if (!ad.thumbnailUrl && ad._hash && byHash[ad._hash]) {
+            ad.thumbnailUrl = byHash[ad._hash];
+          }
+        }
+      } catch (e) { console.warn("adimages lookup failed:", e.message); }
+    }
+
+    // Pass 3: resolve video_id → picture via batch
+    if (neededVideoIds.size) {
+      try {
+        const ids = [...neededVideoIds];
+        const res = await apiGet("", { ids: ids.join(","), fields: "picture" });
+        for (const ad of Object.values(map)) {
+          if (!ad.thumbnailUrl && ad._videoId && res[ad._videoId]?.picture) {
+            ad.thumbnailUrl = res[ad._videoId].picture;
+          }
+        }
+      } catch (e) { console.warn("video lookup failed:", e.message); }
+    }
+
+    // Pass 4: resolve effective_object_story_id → full_picture via batch
+    if (neededStoryIds.size) {
+      try {
+        const ids = [...neededStoryIds];
+        // Batch in chunks of 50 (Meta limit)
+        const byId = {};
+        for (let i = 0; i < ids.length; i += 50) {
+          const chunk = ids.slice(i, i + 50);
+          const res = await apiGet("", { ids: chunk.join(","), fields: "full_picture,picture" });
+          Object.assign(byId, res);
+        }
+        for (const ad of Object.values(map)) {
+          if (!ad.thumbnailUrl && ad._storyId && byId[ad._storyId]) {
+            ad.thumbnailUrl = byId[ad._storyId].full_picture || byId[ad._storyId].picture;
+          }
+        }
+      } catch (e) { console.warn("story lookup failed:", e.message); }
+    }
+
+    // Strip private fields
+    for (const ad of Object.values(map)) {
+      delete ad._hash; delete ad._videoId; delete ad._storyId;
     }
     return map;
   } catch (e) {
@@ -541,12 +656,12 @@ function renderAdTable(rows, currency) {
           if (row.isVideo) {
             // Video: wrap in badge div so the ::after play overlay applies
             thumbEl = `<div class="ad-thumb-video-badge">
-              <img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy"
+              <img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy" referrerpolicy="no-referrer"
                    onerror="this.closest('.ad-thumb-video-badge').style.display='none'">
             </div>`;
           } else {
             // Image ad: plain img, hide on error
-            thumbEl = `<img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy"
+            thumbEl = `<img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy" referrerpolicy="no-referrer"
                             onerror="this.style.display='none'">`;
           }
         } else {
