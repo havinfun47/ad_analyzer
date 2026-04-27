@@ -442,21 +442,14 @@ function renderAdSetTable(rows, currency) {
 async function fetchAdThumbnails(adAccountId) {
   try {
     // Only fields verified against Meta Marketing API v25 docs.
-    // If we add a non-existent field, the whole query 400s and all thumbnails go blank.
+    // Kept narrow — Meta returns 500 "reduce the amount of data" if expansion is too heavy.
     const creativeFields = [
       "thumbnail_url",
       "image_url",
       "image_hash",
       "video_id",
       "object_type",
-      "effective_object_story_id",
-      "asset_feed_spec{images{url,hash},videos{video_id,thumbnail_url}}",
-      "object_story_spec{" +
-        "link_data{picture,image_hash,child_attachments{picture,image_hash}}," +
-        "video_data{image_url,image_hash,video_id}," +
-        "template_data{picture,image_hash}," +
-        "photo_data{image_hash,url}" +
-      "}"
+      "effective_object_story_id"
     ].join(",");
 
     let all = [];
@@ -470,7 +463,7 @@ async function fetchAdThumbnails(adAccountId) {
       } else {
         data = await apiGet(`${adAccountId}/ads`, {
           fields: `id,name,creative{${creativeFields}}`,
-          limit: 200
+          limit: 50
         });
       }
       if (data.data) all = all.concat(data.data);
@@ -485,46 +478,15 @@ async function fetchAdThumbnails(adAccountId) {
 
     for (const ad of all) {
       const cr  = ad.creative || {};
-      const oss = cr.object_story_spec || {};
-      const afs = cr.asset_feed_spec   || {};
       const objectType = (cr.object_type || "").toUpperCase();
-      const isVideo = objectType === "VIDEO" ||
-        !!cr.video_id ||
-        !!oss.video_data?.video_id ||
-        !!(afs.videos && afs.videos.length);
+      const isVideo = objectType === "VIDEO" || !!cr.video_id;
 
-      // Try every known URL field, in priority order
-      const url =
-        cr.thumbnail_url ||
-        oss.video_data?.image_url ||
-        oss.link_data?.picture ||
-        oss.link_data?.child_attachments?.[0]?.picture ||
-        oss.template_data?.picture ||
-        oss.photo_data?.url ||
-        afs.images?.[0]?.url ||
-        afs.videos?.[0]?.thumbnail_url ||
-        cr.image_url ||
-        null;
+      const url     = cr.thumbnail_url || cr.image_url || null;
+      const hash    = !url ? cr.image_hash || null : null;
+      const videoId = !url ? cr.video_id   || null : null;
+      const storyId = !url ? cr.effective_object_story_id || null : null;
 
-      const hash =
-        cr.image_hash ||
-        oss.link_data?.image_hash ||
-        oss.link_data?.child_attachments?.[0]?.image_hash ||
-        oss.template_data?.image_hash ||
-        oss.photo_data?.image_hash ||
-        afs.images?.[0]?.hash ||
-        null;
-
-      const videoId =
-        cr.video_id ||
-        oss.video_data?.video_id ||
-        afs.videos?.[0]?.video_id ||
-        null;
-
-      const storyId = cr.effective_object_story_id || null;
-
-      map[ad.id] = { thumbnailUrl: url, isVideo, _hash: !url ? hash : null,
-                     _videoId: !url ? videoId : null, _storyId: !url ? storyId : null };
+      map[ad.id] = { thumbnailUrl: url, isVideo, _hash: hash, _videoId: videoId, _storyId: storyId };
 
       if (!url) {
         if (hash)    neededHashes.add(hash);
