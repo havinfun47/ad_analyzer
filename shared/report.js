@@ -441,6 +441,8 @@ function renderAdSetTable(rows, currency) {
 /* ── Fetch Ad Thumbnails ───────────────────────────────────── */
 async function fetchAdThumbnails(adAccountId) {
   try {
+    // Only fields verified against Meta Marketing API v25 docs.
+    // If we add a non-existent field, the whole query 400s and all thumbnails go blank.
     const creativeFields = [
       "thumbnail_url",
       "image_url",
@@ -448,11 +450,11 @@ async function fetchAdThumbnails(adAccountId) {
       "video_id",
       "object_type",
       "effective_object_story_id",
-      "asset_feed_spec{images{url,hash},videos{thumbnail_url,video_id}}",
+      "asset_feed_spec{images{url,hash},videos{video_id,thumbnail_url}}",
       "object_story_spec{" +
         "link_data{picture,image_hash,child_attachments{picture,image_hash}}," +
-        "video_data{image_url,picture,thumbnail_url,video_id}," +
-        "template_data{picture,image_url,image_hash}," +
+        "video_data{image_url,image_hash,video_id}," +
+        "template_data{picture,image_hash}," +
         "photo_data{image_hash,url}" +
       "}"
     ].join(",");
@@ -494,13 +496,10 @@ async function fetchAdThumbnails(adAccountId) {
       // Try every known URL field, in priority order
       const url =
         cr.thumbnail_url ||
-        oss.video_data?.thumbnail_url ||
         oss.video_data?.image_url ||
-        oss.video_data?.picture ||
         oss.link_data?.picture ||
         oss.link_data?.child_attachments?.[0]?.picture ||
         oss.template_data?.picture ||
-        oss.template_data?.image_url ||
         oss.photo_data?.url ||
         afs.images?.[0]?.url ||
         afs.videos?.[0]?.thumbnail_url ||
