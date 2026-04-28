@@ -872,7 +872,8 @@ async function loadReport() {
   const client = currentClient;
 
   try {
-    const [accCurr, accPrev, campaigns, adsets, ads, thumbnails] = await Promise.all([
+    const [accInfo, accCurr, accPrev, campaigns, adsets, ads, thumbnails] = await Promise.all([
+      apiGet(client.adAccountId, { fields: "currency" }),
       fetchInsights(client.adAccountId, "account",  { since: dates.since,     until: dates.until }),
       fetchInsights(client.adAccountId, "account",  { since: dates.compSince, until: dates.compUntil }),
       fetchInsights(client.adAccountId, "campaign", { since: dates.since,     until: dates.until }, ["campaign_name"]),
@@ -881,11 +882,15 @@ async function loadReport() {
       fetchAdThumbnails(client.adAccountId)
     ]);
 
-    _accountData  = buildAccountMetrics(accCurr,    client.currency);
-    _accountPrev  = buildAccountMetrics(accPrev,     client.currency);
-    _campaignData = buildCampaignRows(campaigns,     client.currency);
-    _adsetData    = buildAdSetRows(adsets,            client.currency);
-    _adData       = buildAdRows(ads, thumbnails,      client.currency);
+    // Use the currency the ad account is actually billed in
+    const currency = accInfo.currency || client.currency;
+    client.currency = currency;
+
+    _accountData  = buildAccountMetrics(accCurr,    currency);
+    _accountPrev  = buildAccountMetrics(accPrev,     currency);
+    _campaignData = buildCampaignRows(campaigns,     currency);
+    _adsetData    = buildAdSetRows(adsets,            currency);
+    _adData       = buildAdRows(ads, thumbnails,      currency);
 
     renderReport();
   } catch (err) {
