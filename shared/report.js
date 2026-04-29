@@ -585,6 +585,7 @@ function buildAdRows(rows, thumbnails, currency) {
     const thumb       = thumbnails?.[r.ad_id] || {};
 
     return {
+      adId: r.ad_id || null,
       name: r.ad_name || "—",
       spend, purchases, roas,
       cpPurchase, cpCheckout, cpCart, cpClick,
@@ -629,7 +630,8 @@ function renderAdTable(rows, currency) {
           thumbEl = placeholder;
         }
 
-        return `<div class="ad-thumb-cell">${thumbEl}<span class="ad-name-text">${val}</span></div>`;
+        const adId = row.adId ? `data-ad-id="${row.adId}" data-ad-name="${val.replace(/"/g, '&quot;')}"` : "";
+        return `<div class="ad-thumb-cell ad-preview-trigger" ${adId} style="cursor:${row.adId ? 'pointer' : 'default'}">${thumbEl}<span class="ad-name-text">${val}</span></div>`;
       }
     },
     { key: "spend",      label: "Amount Spent",        numeric: true, fmt: v => formatCurrency(v, c) },
@@ -1045,6 +1047,92 @@ function initTokenControls() {
 let _trendsMode  = "weekly";
 let _trendsCache = {};   // { weekly: rows[], monthly: rows[] }
 
+/* ── Ad Preview Modal ─────────────────────────────────────── */
+const AD_PREVIEW_FORMATS = [
+  { value: "DESKTOP_FEED_STANDARD",  label: "Facebook Feed" },
+  { value: "MOBILE_FEED_STANDARD",   label: "Facebook Mobile" },
+  { value: "INSTAGRAM_STANDARD",     label: "Instagram Feed" },
+  { value: "INSTAGRAM_STORY",        label: "Instagram Story" },
+  { value: "INSTAGRAM_REELS",        label: "Instagram Reels" },
+];
+
+function injectAdPreviewModal() {
+  if (document.getElementById("ad-preview-modal")) return;
+  const formatOptions = AD_PREVIEW_FORMATS.map(f =>
+    `<option value="${f.value}">${f.label}</option>`
+  ).join("");
+  const el = document.createElement("div");
+  el.id = "ad-preview-modal";
+  el.innerHTML = `
+    <div class="ad-preview-backdrop"></div>
+    <div class="ad-preview-dialog">
+      <div class="ad-preview-header">
+        <span class="ad-preview-title" id="ad-preview-title"></span>
+        <div class="ad-preview-controls">
+          <select class="date-select" id="ad-preview-format">${formatOptions}</select>
+          <button class="btn-ghost ad-preview-close" id="ad-preview-close">✕</button>
+        </div>
+      </div>
+      <div class="ad-preview-body" id="ad-preview-body">
+        <div class="ad-preview-loading">Loading preview…</div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+
+  document.getElementById("ad-preview-close").addEventListener("click", closeAdPreview);
+  document.getElementById("ad-preview-backdrop") ||
+    el.querySelector(".ad-preview-backdrop").addEventListener("click", closeAdPreview);
+  document.getElementById("ad-preview-format").addEventListener("change", () => {
+    const adId = el.dataset.adId;
+    if (adId) loadAdPreviewFrame(adId, document.getElementById("ad-preview-format").value);
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && el.classList.contains("open")) closeAdPreview();
+  });
+
+  // Event delegation for ad-preview-trigger clicks
+  document.addEventListener("click", e => {
+    const trigger = e.target.closest(".ad-preview-trigger[data-ad-id]");
+    if (trigger) openAdPreview(trigger.dataset.adId, trigger.dataset.adName);
+  });
+}
+
+function openAdPreview(adId, adName) {
+  const modal = document.getElementById("ad-preview-modal");
+  if (!modal) return;
+  modal.dataset.adId = adId;
+  document.getElementById("ad-preview-title").textContent = adName || "Ad Preview";
+  document.getElementById("ad-preview-format").value = AD_PREVIEW_FORMATS[0].value;
+  modal.classList.add("open");
+  document.body.style.overflow = "hidden";
+  loadAdPreviewFrame(adId, AD_PREVIEW_FORMATS[0].value);
+}
+
+function closeAdPreview() {
+  const modal = document.getElementById("ad-preview-modal");
+  if (!modal) return;
+  modal.classList.remove("open");
+  document.body.style.overflow = "";
+  document.getElementById("ad-preview-body").innerHTML =
+    `<div class="ad-preview-loading">Loading preview…</div>`;
+}
+
+async function loadAdPreviewFrame(adId, format) {
+  const body = document.getElementById("ad-preview-body");
+  body.innerHTML = `<div class="ad-preview-loading">Loading preview…</div>`;
+  try {
+    const data = await apiGet(`${adId}/previews`, { ad_format: format });
+    const html = data.data?.[0]?.body;
+    if (!html) { body.innerHTML = `<div class="ad-preview-loading">No preview available for this format.</div>`; return; }
+    // Meta returns an escaped iframe string — unescape it
+    const unescaped = html.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&").replace(/&quot;/g,'"');
+    body.innerHTML = `<div class="ad-preview-frame">${unescaped}</div>`;
+  } catch(e) {
+    body.innerHTML = `<div class="ad-preview-loading" style="color:var(--red)">Failed to load preview: ${e.message}</div>`;
+  }
+}
+
 /* ── Inject tab bar + trends section into DOM ─────────────── */
 function injectTrendsUI() {
   const rc = document.getElementById("report-content");
@@ -1338,6 +1426,7 @@ function initReport(clientKey) {
   initDateControls();
   initEditorialBlocks();
   injectTrendsUI();
+  injectAdPreviewModal();
   initTabs();
 
   if (!getToken()) {
