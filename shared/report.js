@@ -486,7 +486,13 @@ async function fetchAdThumbnails(adAccountId) {
       const videoId = !url ? cr.video_id   || null : null;
       const storyId = !url ? cr.effective_object_story_id || null : null;
 
-      map[ad.id] = { thumbnailUrl: url, isVideo, _hash: hash, _videoId: videoId, _storyId: storyId };
+      map[ad.id] = {
+        thumbnailUrl: url,
+        isVideo,
+        videoId:  cr.video_id   || null,   // kept for creative download
+        imageUrl: cr.image_url  || null,   // full-res image for image ads
+        _hash: hash, _videoId: videoId, _storyId: storyId
+      };
 
       if (!url) {
         if (hash)    neededHashes.add(hash);
@@ -547,7 +553,7 @@ async function fetchAdThumbnails(adAccountId) {
       } catch (e) { console.warn("story lookup failed:", e.message); }
     }
 
-    // Promote storyId to public field, strip other private fields
+    // Promote storyId to public field, strip resolver-only private fields
     for (const ad of Object.values(map)) {
       ad.storyId = ad._storyId || null;
       delete ad._hash; delete ad._videoId; delete ad._storyId;
@@ -586,9 +592,11 @@ function buildAdRows(rows, thumbnails, currency) {
     const thumb       = thumbnails?.[r.ad_id] || {};
 
     return {
-      adId:    r.ad_id || null,
-      storyId: thumb.storyId || null,
-      name:    r.ad_name || "—",
+      adId:     r.ad_id || null,
+      storyId:  thumb.storyId  || null,
+      videoId:  thumb.videoId  || null,
+      imageUrl: thumb.imageUrl || null,
+      name:     r.ad_name || "—",
       spend, purchases, roas,
       cpPurchase, cpCheckout, cpCart, cpClick,
       cpm, frequency,
@@ -955,11 +963,19 @@ function injectAdCsvButton(adEl) {
   if (!section) return;
   const header = section.querySelector(".section-header");
   if (!header || header.querySelector(".btn-csv-ad")) return;
-  const btn = document.createElement("button");
-  btn.className = "btn-ghost btn-csv-ad no-print";
-  btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Export CSV`;
-  btn.addEventListener("click", exportAdPreviewCSV);
-  header.appendChild(btn);
+
+  const csvBtn = document.createElement("button");
+  csvBtn.className = "btn-ghost btn-csv-ad no-print";
+  csvBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Export CSV`;
+  csvBtn.addEventListener("click", exportAdPreviewCSV);
+
+  const zipBtn = document.createElement("button");
+  zipBtn.className = "btn-ghost btn-creatives-zip no-print";
+  zipBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Download Creatives`;
+  zipBtn.addEventListener("click", downloadAdCreatives);
+
+  header.appendChild(csvBtn);
+  header.appendChild(zipBtn);
 }
 
 function exportAdPreviewCSV() {
@@ -1009,6 +1025,127 @@ function exportAdPreviewCSV() {
   a.download = `${client}_AdPreview_${since}_${until}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/* ── Creative zip download ─────────────────────────────────── */
+async function loadJSZip() {
+  if (window.JSZip) return;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function tryFetchBlob(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.blob();
+  } catch { return null; }
+}
+
+async function downloadAdCreatives() {
+  if (!_adData || !_adData.length) return;
+  const btn = document.querySelector(".btn-creatives-zip");
+  const originalLabel = btn?.innerHTML;
+
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+    await loadJSZip();
+    const zip = new window.JSZip();
+
+    const clientName = currentClient?.name?.replace(/[^a-z0-9]/gi, "_") || "Client";
+    const since      = currentDates?.since || "";
+    const until      = currentDates?.until || "";
+
+    const sanitize = str => (str || "ad").replace(/[\/\\:*?"<>|]/g, "_").trim().slice(0, 60);
+
+    // Deduplicate by adId so the same creative isn't downloaded twice
+    const seen = new Set();
+    const ads  = _adData.filter(r => { if (!r.adId || seen.has(r.adId)) return false; seen.add(r.adId); return true; });
+
+    const urlLinks = [];   // fallback for anything CORS blocks
+    let done = 0;
+
+    for (const row of ads) {
+      done++;
+      if (btn) btn.textContent = `Downloading ${done} / ${ads.length}…`;
+      const name = sanitize(row.name) || `ad_${done}`;
+
+      try {
+        if (row.isVideo && row.videoId) {
+          // Fetch the streamable source URL from Meta, then try to download it
+          const vData = await apiGet(row.videoId, { fields: "source,picture" });
+          const sourceUrl = vData.source;
+          if (sourceUrl) {
+            const blob = await tryFetchBlob(sourceUrl);
+            if (blob && blob.size > 1000) {
+              zip.file(`${name}.mp4`, blob);
+            } else {
+              urlLinks.push({ name, url: sourceUrl, type: "video" });
+            }
+          }
+        } else {
+          const imgUrl = row.imageUrl || row.thumbnailUrl;
+          if (imgUrl) {
+            const blob = await tryFetchBlob(imgUrl);
+            const ext  = /\.png(\?|$)/i.test(imgUrl) ? "png" : /\.gif(\?|$)/i.test(imgUrl) ? "gif" : "jpg";
+            if (blob && blob.size > 500) {
+              zip.file(`${name}.${ext}`, blob);
+            } else {
+              urlLinks.push({ name, url: imgUrl, type: "image" });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`Skipped ${row.name}:`, e.message);
+      }
+    }
+
+    // Always include a gallery HTML so assets that couldn't be fetched are still viewable
+    const galleryRows = ads.map(r => {
+      const name   = sanitize(r.name) || "ad";
+      const thumb  = r.thumbnailUrl || "";
+      const isVid  = r.isVideo;
+      const preview = isVid && r.videoId
+        ? `<video src="" data-vid="${r.videoId}" controls style="max-width:100%;border-radius:6px;" poster="${thumb}"><source type="video/mp4"></video><br><small style="color:#888">Video — may require login to play</small>`
+        : thumb ? `<img src="${thumb}" referrerpolicy="no-referrer" style="max-width:100%;border-radius:6px;">` : `<div style="color:#888;padding:20px">No preview</div>`;
+      return `<div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px;break-inside:avoid">
+        <div style="font-weight:600;margin-bottom:10px;font-size:13px;word-break:break-word">${r.name}</div>
+        ${preview}
+      </div>`;
+    }).join("\n");
+
+    const galleryHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${clientName} Ad Creatives ${since} to ${until}</title>
+<style>body{background:#0a0a0a;color:#f0ede8;font-family:sans-serif;padding:24px}
+h1{font-size:18px;margin-bottom:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}</style>
+</head><body>
+<h1>${clientName} — Ad Creatives (${since} to ${until})</h1>
+<div class="grid">${galleryRows}</div>
+</body></html>`;
+    zip.file("gallery.html", galleryHtml);
+
+    if (urlLinks.length) {
+      const linksTxt = urlLinks.map(l => `${l.type.toUpperCase()} | ${l.name}\n${l.url}`).join("\n\n");
+      zip.file("_manual_download_links.txt", `These creatives could not be auto-downloaded due to browser CORS restrictions.\nRight-click each URL and choose Save As to download manually.\n\n${linksTxt}`);
+    }
+
+    const zipBlob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+    const dlUrl   = URL.createObjectURL(zipBlob);
+    const a       = document.createElement("a");
+    a.href = dlUrl;
+    a.download = `${clientName}_AdCreatives_${since}_${until}.zip`;
+    a.click();
+    URL.revokeObjectURL(dlUrl);
+
+  } catch (e) {
+    alert(`Export failed: ${e.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = originalLabel; }
+  }
 }
 
 function refreshTables() {
