@@ -482,6 +482,7 @@ async function fetchAdThumbnails(adAccountId) {
       const isVideo = objectType === "VIDEO" || !!cr.video_id;
 
       const url     = cr.thumbnail_url || cr.image_url || null;
+      // For thumbnail resolution fallbacks, only chase hash/video/story when no URL yet
       const hash    = !url ? cr.image_hash || null : null;
       const videoId = !url ? cr.video_id   || null : null;
       const storyId = !url ? cr.effective_object_story_id || null : null;
@@ -489,8 +490,8 @@ async function fetchAdThumbnails(adAccountId) {
       map[ad.id] = {
         thumbnailUrl: url,
         isVideo,
-        videoId:  cr.video_id   || null,   // kept for creative download
-        imageUrl: cr.image_url  || null,   // full-res image for image ads
+        videoId:    cr.video_id    || null,  // kept for creative download
+        imageHash:  cr.image_hash  || null,  // always stored — used to fetch full-res via /adimages
         _hash: hash, _videoId: videoId, _storyId: storyId
       };
 
@@ -592,11 +593,11 @@ function buildAdRows(rows, thumbnails, currency) {
     const thumb       = thumbnails?.[r.ad_id] || {};
 
     return {
-      adId:     r.ad_id || null,
-      storyId:  thumb.storyId  || null,
-      videoId:  thumb.videoId  || null,
-      imageUrl: thumb.imageUrl || null,
-      name:     r.ad_name || "—",
+      adId:      r.ad_id || null,
+      storyId:   thumb.storyId   || null,
+      videoId:   thumb.videoId   || null,
+      imageHash: thumb.imageHash || null,
+      name:      r.ad_name || "—",
       spend, purchases, roas,
       cpPurchase, cpCheckout, cpCart, cpClick,
       cpm, frequency,
@@ -1057,16 +1058,40 @@ async function downloadAdCreatives() {
     const zip = new window.JSZip();
 
     const clientName = currentClient?.name?.replace(/[^a-z0-9]/gi, "_") || "Client";
-    const since      = currentDates?.since || "";
-    const until      = currentDates?.until || "";
+    const adAccountId = currentClient?.adAccountId;
+    const since       = currentDates?.since || "";
+    const until       = currentDates?.until || "";
+    const sanitize    = str => (str || "ad").replace(/[/\\:*?"<>|]/g, "_").trim().slice(0, 60);
 
-    const sanitize = str => (str || "ad").replace(/[\/\\:*?"<>|]/g, "_").trim().slice(0, 60);
-
-    // Deduplicate by adId so the same creative isn't downloaded twice
+    // Deduplicate by adId
     const seen = new Set();
-    const ads  = _adData.filter(r => { if (!r.adId || seen.has(r.adId)) return false; seen.add(r.adId); return true; });
+    const ads  = _adData.filter(r => {
+      if (!r.adId || seen.has(r.adId)) return false;
+      seen.add(r.adId); return true;
+    });
 
-    const urlLinks = [];   // fallback for anything CORS blocks
+    if (btn) btn.textContent = "Resolving images…";
+
+    // Batch-resolve image hashes → full-res URL via /adimages
+    const hashToUrl = {};
+    const hashes = [...new Set(ads.map(r => r.imageHash).filter(Boolean))];
+    if (hashes.length && adAccountId) {
+      try {
+        // /adimages accepts up to 50 hashes at a time
+        for (let i = 0; i < hashes.length; i += 50) {
+          const chunk = hashes.slice(i, i + 50);
+          const res = await apiGet(`${adAccountId}/adimages`, {
+            hashes: JSON.stringify(chunk),
+            fields: "hash,url"
+          });
+          for (const img of (res.data || [])) {
+            if (img.hash && img.url) hashToUrl[img.hash] = img.url;
+          }
+        }
+      } catch (e) { console.warn("adimages batch failed:", e.message); }
+    }
+
+    const urlLinks = [];
     let done = 0;
 
     for (const row of ads) {
@@ -1075,24 +1100,25 @@ async function downloadAdCreatives() {
       const name = sanitize(row.name) || `ad_${done}`;
 
       try {
-        if (row.isVideo && row.videoId) {
-          // Fetch the streamable source URL from Meta, then try to download it
-          const vData = await apiGet(row.videoId, { fields: "source,picture" });
+        if (row.videoId) {
+          // Video: get the original MP4 source URL from Meta
+          const vData = await apiGet(row.videoId, { fields: "source" });
           const sourceUrl = vData.source;
           if (sourceUrl) {
             const blob = await tryFetchBlob(sourceUrl);
-            if (blob && blob.size > 1000) {
+            if (blob && blob.size > 10000) {
               zip.file(`${name}.mp4`, blob);
             } else {
               urlLinks.push({ name, url: sourceUrl, type: "video" });
             }
           }
         } else {
-          const imgUrl = row.imageUrl || row.thumbnailUrl;
+          // Image: prefer full-res from /adimages, fall back to whatever URL we have
+          const imgUrl = (row.imageHash && hashToUrl[row.imageHash]) || row.thumbnailUrl;
           if (imgUrl) {
             const blob = await tryFetchBlob(imgUrl);
             const ext  = /\.png(\?|$)/i.test(imgUrl) ? "png" : /\.gif(\?|$)/i.test(imgUrl) ? "gif" : "jpg";
-            if (blob && blob.size > 500) {
+            if (blob && blob.size > 1000) {
               zip.file(`${name}.${ext}`, blob);
             } else {
               urlLinks.push({ name, url: imgUrl, type: "image" });
@@ -1104,33 +1130,39 @@ async function downloadAdCreatives() {
       }
     }
 
-    // Always include a gallery HTML so assets that couldn't be fetched are still viewable
-    const galleryRows = ads.map(r => {
-      const name   = sanitize(r.name) || "ad";
+    // Always include a gallery HTML — images/videos viewable even if binary fetch was blocked
+    const galleryRows = ads.map((r, i) => {
+      const n      = sanitize(r.name) || `ad_${i + 1}`;
       const thumb  = r.thumbnailUrl || "";
-      const isVid  = r.isVideo;
-      const preview = isVid && r.videoId
-        ? `<video src="" data-vid="${r.videoId}" controls style="max-width:100%;border-radius:6px;" poster="${thumb}"><source type="video/mp4"></video><br><small style="color:#888">Video — may require login to play</small>`
-        : thumb ? `<img src="${thumb}" referrerpolicy="no-referrer" style="max-width:100%;border-radius:6px;">` : `<div style="color:#888;padding:20px">No preview</div>`;
-      return `<div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px;break-inside:avoid">
+      const fullImg = (r.imageHash && hashToUrl[r.imageHash]) || thumb;
+      const preview = r.videoId
+        ? `<video controls style="max-width:100%;border-radius:6px;" poster="${thumb}">
+             <source src="" data-src-video="${r.videoId}">
+           </video>`
+        : fullImg
+          ? `<a href="${fullImg}" target="_blank"><img src="${fullImg}" referrerpolicy="no-referrer" style="max-width:100%;border-radius:6px;display:block;"></a>`
+          : `<div style="color:#888;padding:20px 0">No preview available</div>`;
+      return `<div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px">
         <div style="font-weight:600;margin-bottom:10px;font-size:13px;word-break:break-word">${r.name}</div>
         ${preview}
       </div>`;
     }).join("\n");
 
-    const galleryHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>${clientName} Ad Creatives ${since} to ${until}</title>
-<style>body{background:#0a0a0a;color:#f0ede8;font-family:sans-serif;padding:24px}
-h1{font-size:18px;margin-bottom:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}</style>
+    zip.file("gallery.html", `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>${clientName} Ad Creatives ${since}–${until}</title>
+<style>body{background:#0a0a0a;color:#f0ede8;font-family:sans-serif;padding:24px;margin:0}
+h1{font-size:18px;margin-bottom:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}</style>
 </head><body>
-<h1>${clientName} — Ad Creatives (${since} to ${until})</h1>
+<h1>${clientName} — Ad Creatives &nbsp;<small style="color:#666;font-weight:400">${since} to ${until}</small></h1>
 <div class="grid">${galleryRows}</div>
-</body></html>`;
-    zip.file("gallery.html", galleryHtml);
+</body></html>`);
 
     if (urlLinks.length) {
-      const linksTxt = urlLinks.map(l => `${l.type.toUpperCase()} | ${l.name}\n${l.url}`).join("\n\n");
-      zip.file("_manual_download_links.txt", `These creatives could not be auto-downloaded due to browser CORS restrictions.\nRight-click each URL and choose Save As to download manually.\n\n${linksTxt}`);
+      zip.file("_manual_download_links.txt",
+        "These creatives could not be auto-downloaded (browser CORS restriction).\n" +
+        "Open each URL in your browser and use Save As to download it manually.\n\n" +
+        urlLinks.map(l => `[${l.type.toUpperCase()}] ${l.name}\n${l.url}`).join("\n\n")
+      );
     }
 
     const zipBlob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
