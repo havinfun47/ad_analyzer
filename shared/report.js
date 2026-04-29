@@ -547,8 +547,9 @@ async function fetchAdThumbnails(adAccountId) {
       } catch (e) { console.warn("story lookup failed:", e.message); }
     }
 
-    // Strip private fields
+    // Promote storyId to public field, strip other private fields
     for (const ad of Object.values(map)) {
+      ad.storyId = ad._storyId || null;
       delete ad._hash; delete ad._videoId; delete ad._storyId;
     }
     return map;
@@ -585,8 +586,9 @@ function buildAdRows(rows, thumbnails, currency) {
     const thumb       = thumbnails?.[r.ad_id] || {};
 
     return {
-      adId: r.ad_id || null,
-      name: r.ad_name || "—",
+      adId:    r.ad_id || null,
+      storyId: thumb.storyId || null,
+      name:    r.ad_name || "—",
       spend, purchases, roas,
       cpPurchase, cpCheckout, cpCart, cpClick,
       cpm, frequency,
@@ -939,6 +941,76 @@ function renderReport() {
   document.getElementById("report-content").style.display = "";
 }
 
+function fbPostUrl(storyId) {
+  if (!storyId) return "";
+  const idx = storyId.indexOf("_");
+  if (idx < 0) return "";
+  const pageId = storyId.slice(0, idx);
+  const postId = storyId.slice(idx + 1);
+  return `https://www.facebook.com/permalink.php?story_fbid=${postId}&id=${pageId}`;
+}
+
+function injectAdCsvButton(adEl) {
+  const section = adEl.closest(".section");
+  if (!section) return;
+  const header = section.querySelector(".section-header");
+  if (!header || header.querySelector(".btn-csv-ad")) return;
+  const btn = document.createElement("button");
+  btn.className = "btn-ghost btn-csv-ad no-print";
+  btn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Export CSV`;
+  btn.addEventListener("click", exportAdPreviewCSV);
+  header.appendChild(btn);
+}
+
+function exportAdPreviewCSV() {
+  if (!_adData || !_adData.length) return;
+  const c = currentClient?.currency || "CAD";
+  const fmt = (v, fn) => v != null ? fn(v) : "";
+
+  const headers = [
+    "Ad Name",
+    "Facebook Post Link",
+    "Amount Spent",
+    "Purchases",
+    "Purchase ROAS",
+    "Cost / Purchase",
+    "Cost / Checkout",
+    "Cost / Add to Cart",
+    "Cost / Click",
+    "CPM",
+    "Frequency"
+  ];
+
+  const rows = _adData.map(r => [
+    r.name,
+    fbPostUrl(r.storyId),
+    fmt(r.spend,      v => v.toFixed(2)),
+    fmt(r.purchases,  v => v.toFixed(0)),
+    fmt(r.roas,       v => v.toFixed(2)),
+    fmt(r.cpPurchase, v => v.toFixed(2)),
+    fmt(r.cpCheckout, v => v.toFixed(2)),
+    fmt(r.cpCart,     v => v.toFixed(2)),
+    fmt(r.cpClick,    v => v.toFixed(2)),
+    fmt(r.cpm,        v => v.toFixed(2)),
+    fmt(r.frequency,  v => v.toFixed(2))
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+
+  const client     = currentClient?.name?.replace(/[^a-z0-9]/gi, "_") || "Client";
+  const since      = currentDates?.since || "";
+  const until      = currentDates?.until || "";
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url;
+  a.download = `${client}_AdPreview_${since}_${until}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function refreshTables() {
   const currency = currentClient?.currency || "CAD";
 
@@ -949,7 +1021,10 @@ function refreshTables() {
   if (adsetEl && _adsetData) adsetEl.innerHTML = renderAdSetTable(_adsetData, currency);
 
   const adEl = document.getElementById("ad-table-container");
-  if (adEl && _adData) adEl.innerHTML = renderAdTable(_adData, currency);
+  if (adEl && _adData) {
+    adEl.innerHTML = renderAdTable(_adData, currency);
+    injectAdCsvButton(adEl);
+  }
 
   attachSortListeners();
 }
