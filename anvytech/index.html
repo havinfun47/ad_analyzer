@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Anvy Tech — Performance Bonus | Scale Science</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0A0A0A; --surface: #111; --card: #141414; --border: #222;
+      --text: #F0EDE8; --muted: #666; --dim: #333; --accent: #00FF6A;
+      --font-head: 'Space Grotesk', sans-serif; --font-body: 'DM Sans', sans-serif;
+    }
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      padding: 32px 24px 64px;
+    }
+    .container { max-width: 920px; margin: 0 auto; }
+
+    header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 48px; }
+    .logo-svg { height: 30px; }
+    .powered {
+      font-family: var(--font-head); font-size: 10px; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+    }
+
+    .hero { margin-bottom: 56px; }
+    .eyebrow {
+      font-family: var(--font-head); font-size: 11px; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+      margin-bottom: 14px;
+    }
+    h1 {
+      font-family: var(--font-head); font-weight: 800; letter-spacing: -0.02em;
+      font-size: clamp(28px, 4.5vw, 44px); line-height: 1.1; margin-bottom: 12px;
+    }
+    .period { font-size: 14px; color: var(--muted); }
+
+    .loading, .error {
+      padding: 80px 24px; text-align: center; color: var(--muted);
+      font-size: 14px;
+    }
+    .error { color: #FF6B6B; }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    @media (max-width: 640px) { .kpi-grid { grid-template-columns: 1fr; } }
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .kpi-label {
+      font-family: var(--font-head); font-size: 10px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+      margin-bottom: 14px;
+    }
+    .kpi-value {
+      font-family: var(--font-head); font-size: 28px; font-weight: 700;
+      letter-spacing: -0.02em; color: var(--text);
+    }
+
+    .bonus-card {
+      background: linear-gradient(135deg, #0d1f12 0%, #0a0a0a 100%);
+      border: 1px solid rgba(0,255,106,0.25);
+      border-radius: 16px;
+      padding: 40px 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .bonus-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+    }
+    .bonus-label {
+      font-family: var(--font-head); font-size: 11px; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+      margin-bottom: 16px;
+    }
+    .bonus-value {
+      font-family: var(--font-head); font-size: clamp(40px, 7vw, 64px);
+      font-weight: 800; letter-spacing: -0.03em; color: var(--text);
+      line-height: 1;
+    }
+    .bonus-sub {
+      font-size: 13px; color: var(--muted); margin-top: 14px;
+    }
+
+    footer {
+      margin-top: 64px; text-align: center; font-size: 11px; color: var(--dim);
+      font-family: var(--font-head); letter-spacing: 0.1em; text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <svg class="logo-svg" viewBox="0 0 200 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="28" font-family="'Space Grotesk', sans-serif" font-size="28" font-weight="800" fill="#F0EDE8">Scale</text>
+      <rect x="102" y="0" width="76" height="36" rx="3" fill="#F0EDE8"/>
+      <text x="109" y="25" font-family="'Space Grotesk', sans-serif" font-size="21" font-weight="800" fill="#0A0A0A">Sci</text>
+    </svg>
+    <div class="powered">Client Performance Dashboard</div>
+  </header>
+
+  <div class="hero">
+    <div class="eyebrow">Anvy Tech</div>
+    <h1>Performance Snapshot</h1>
+    <div class="period" id="period-label"></div>
+  </div>
+
+  <div id="loading" class="loading">Loading live performance data…</div>
+  <div id="error"   class="error" style="display:none"></div>
+
+  <div id="content" style="display:none">
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Revenue</div>
+        <div class="kpi-value" id="revenue">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Ad Spend</div>
+        <div class="kpi-value" id="spend">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">ROAS</div>
+        <div class="kpi-value" id="roas">—</div>
+      </div>
+    </div>
+
+    <div class="bonus-card">
+      <div class="bonus-label">Performance Bonus — Month to Date</div>
+      <div class="bonus-value" id="bonus">—</div>
+      <div class="bonus-sub">Updated live from Meta Ads</div>
+    </div>
+  </div>
+
+  <footer>Scale Science &nbsp;·&nbsp; Internal Use</footer>
+</div>
+
+<script>
+(() => {
+  const TOKEN          = "EAAhmSeA3mdMBRUAtVzXD1imThZBTK2WfTZAPtajNpjRxs8RdLV2VPVZARH6Nr7XWjAJCr6eDHKZA3oWB3pZCw15UtxUsZCEyPVrqmdTdBUZBp7Bf3sZBQi18zZAmUXb6BgkcYrXkug9MC5ZCLVN405n5hkNN0ed9TMCCeVxklAG7bvELAZAtlBZAMis7KuyZCnbWvyg49uwZDZD";
+  const AD_ACCOUNT_ID  = "act_575199276244807";
+  const API_BASE       = "https://graph.facebook.com/v25.0";
+  const PURCHASE_ACTION = "offsite_conversion.fb_pixel_purchase";
+  const BREAKEVEN_ROAS = 2.1;
+  const BONUS_RATE     = 0.10;
+
+  function pad(n){ return String(n).padStart(2,"0"); }
+  function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+
+  async function api(path, params) {
+    const url = new URL(`${API_BASE}/${path}`);
+    url.searchParams.set("access_token", TOKEN);
+    for (const [k,v] of Object.entries(params || {})) {
+      url.searchParams.set(k, typeof v === "object" ? JSON.stringify(v) : v);
+    }
+    const res  = await fetch(url.toString());
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || "Meta API error");
+    return data;
+  }
+
+  function getActionValue(row, type) {
+    const arr = row?.action_values || [];
+    const a = arr.find(x => x.action_type === type);
+    return a ? parseFloat(a.value || 0) : 0;
+  }
+
+  function formatCurrency(val, currency) {
+    return new Intl.NumberFormat("en-CA", {
+      style: "currency", currency: currency || "CAD",
+      minimumFractionDigits: 2, maximumFractionDigits: 2
+    }).format(val || 0);
+  }
+
+  function formatRoas(val) {
+    return `${(val || 0).toFixed(2)}×`;
+  }
+
+  function setPeriodLabel(since, until) {
+    const fmt = d => new Date(d + "T00:00:00").toLocaleDateString("en-CA",
+      { month: "long", day: "numeric", year: "numeric" });
+    document.getElementById("period-label").textContent = `${fmt(since)} — ${fmt(until)}`;
+  }
+
+  function showError(msg) {
+    document.getElementById("loading").style.display = "none";
+    const e = document.getElementById("error");
+    e.textContent = msg;
+    e.style.display = "block";
+  }
+
+  async function load() {
+    try {
+      const now    = new Date();
+      const since  = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+      const until  = ymd(now);
+      setPeriodLabel(since, until);
+
+      const [acctInfo, insights] = await Promise.all([
+        api(AD_ACCOUNT_ID, { fields: "currency" }),
+        api(`${AD_ACCOUNT_ID}/insights`, {
+          level: "account",
+          time_range: { since, until },
+          fields: "spend,action_values"
+        })
+      ]);
+
+      const currency = acctInfo.currency || "CAD";
+      const row      = (insights.data && insights.data[0]) || {};
+      const spend    = parseFloat(row.spend || 0);
+      const revenue  = getActionValue(row, PURCHASE_ACTION);
+      const roas     = spend > 0 ? revenue / spend : 0;
+      const breakevenRevenue = spend * BREAKEVEN_ROAS;
+      const grossProfit      = revenue - breakevenRevenue;
+      const bonus            = Math.max(0, grossProfit) * BONUS_RATE;
+
+      document.getElementById("revenue").textContent = formatCurrency(revenue, currency);
+      document.getElementById("spend").textContent   = formatCurrency(spend,   currency);
+      document.getElementById("roas").textContent    = formatRoas(roas);
+      document.getElementById("bonus").textContent   = formatCurrency(bonus,   currency);
+
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("content").style.display = "block";
+    } catch (e) {
+      showError(`Unable to load data: ${e.message}`);
+    }
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>
