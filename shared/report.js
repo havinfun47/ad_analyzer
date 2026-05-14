@@ -1804,9 +1804,99 @@ function getViewThroughPurchases(row) {
   return parseFloat(a["1d_view"] || 0);
 }
 
-/* ── Fetch all periods in parallel ────────────────────────── */
+/* ── Aggregation helpers ──────────────────────────────────── */
+function sumField(rows, field) {
+  return rows.reduce((s, r) => s + parseFloat(r[field] || 0), 0);
+}
+function sumActionsByType(rows, field) {
+  const byType = {};
+  for (const r of rows) {
+    for (const a of (r[field] || [])) {
+      byType[a.action_type] = (byType[a.action_type] || 0) + parseFloat(a.value || 0);
+    }
+  }
+  return Object.entries(byType).map(([action_type, value]) => ({ action_type, value: String(value) }));
+}
+function weightedAvgActionsByType(rows, field, weightField) {
+  // weighted by the per-period weightField (e.g. video_view count)
+  const sumVal = {}, sumWt = {};
+  for (const r of rows) {
+    const w = parseFloat(r[weightField] || 0) || 1;
+    for (const a of (r[field] || [])) {
+      sumVal[a.action_type] = (sumVal[a.action_type] || 0) + parseFloat(a.value || 0) * w;
+      sumWt [a.action_type] = (sumWt [a.action_type] || 0) + w;
+    }
+  }
+  return Object.entries(sumVal).map(([action_type, totalNum]) => ({
+    action_type, value: String(totalNum / (sumWt[action_type] || 1))
+  }));
+}
+
+function aggregateRows(rows) {
+  if (!rows.length) return {};
+  if (rows.length === 1) return rows[0];
+
+  const spend       = sumField(rows, "spend");
+  const impressions = sumField(rows, "impressions");
+  const reach       = sumField(rows, "reach"); // sum is an over-estimate for multi-period reach; close enough
+  const linkClicks  = sumField(rows, "inline_link_clicks");
+  const outClicks   = rows.reduce((s, r) => s + getOutboundClicks(r), 0);
+
+  const actions      = sumActionsByType(rows, "actions");
+  const actionVals   = sumActionsByType(rows, "action_values");
+  const thruplays    = sumActionsByType(rows, "video_thruplay_watched_actions");
+
+  // Look up purchase value from aggregated action_values to recompute ROAS
+  const purchaseVal  = parseFloat(
+    actionVals.find(a => a.action_type === PURCHASE_ACTION)?.value
+    || actionVals.find(a => a.action_type === "omni_purchase")?.value
+    || 0
+  );
+
+  // For weighted avg watch time, weight by per-period video_view count from actions array
+  const videoViewByRow = rows.map(r =>
+    (r.actions || []).find(a => a.action_type === "video_view")?.value || 0
+  );
+  const rowsWithVw = rows.map((r, i) => ({ ...r, _vw: parseFloat(videoViewByRow[i]) || 0 }));
+  const avgWatch   = weightedAvgActionsByType(rowsWithVw, "video_avg_time_watched_actions", "_vw");
+
+  // Re-compute cost_per_action_type for the purchase/cart actions we care about
+  const cpat = actions.map(a => {
+    const cnt = parseFloat(a.value || 0);
+    return { action_type: a.action_type, value: cnt > 0 ? String(spend / cnt) : "0" };
+  });
+
+  return {
+    spend:                              String(spend),
+    impressions:                        String(impressions),
+    reach:                              String(reach),
+    cpm:                                String(impressions > 0 ? (spend / impressions) * 1000 : 0),
+    frequency:                          String(reach > 0 ? impressions / reach : 0),
+    inline_link_clicks:                 String(linkClicks),
+    cost_per_inline_link_click:         String(linkClicks > 0 ? spend / linkClicks : 0),
+    inline_link_click_ctr:              String(impressions > 0 ? (linkClicks / impressions) * 100 : 0),
+    outbound_clicks:                    String(outClicks),
+    actions,
+    action_values:                      actionVals,
+    cost_per_action_type:               cpat,
+    video_thruplay_watched_actions:     thruplays,
+    video_avg_time_watched_actions:     avgWatch,
+    purchase_roas: [{ action_type: "omni_purchase", value: String(spend > 0 ? purchaseVal / spend : 0) }]
+  };
+}
+
+function rowsWithin(rows, since, until) {
+  return rows.filter(r => r.date_start >= since && r.date_start <= until);
+}
+
+/* ── Fetch insights — TWO total API calls instead of 10 ───── */
 async function fetchAnalysisInsights(mode) {
   const periods = getAnalysisPeriods(mode);
+  // Periods are currently sorted current-first; we need the overall date range
+  const allSince = periods[periods.length - 1].since; // oldest period start
+  const allUntil = periods[0].until;                   // newest (today)
+  const incr     = mode === "weekly" ? 7 : "monthly"; // quarterly aggregates from monthly rows
+
   const fields = [
     "spend", "impressions", "reach", "cpm", "frequency",
     "actions", "action_values", "cost_per_action_type",
@@ -1814,29 +1904,36 @@ async function fetchAnalysisInsights(mode) {
     "cost_per_inline_link_click", "inline_link_click_ctr",
     "video_thruplay_watched_actions",
     "video_avg_time_watched_actions",
-    "purchase_roas"
+    "purchase_roas",
+    "date_start", "date_stop"
   ].join(",");
 
-  // Two parallel calls per period: default attribution (for all standard metrics),
-  // plus a 1d_view attribution call (for % view conversion).
-  const callDefault = p => apiGet(`${currentClient.adAccountId}/insights`, {
-    fields,
-    time_range: JSON.stringify({ since: p.since, until: p.until }),
-    level:      "account"
-  });
-  const callView = p => apiGet(`${currentClient.adAccountId}/insights`, {
-    fields:    "actions",
-    time_range: JSON.stringify({ since: p.since, until: p.until }),
-    action_attribution_windows: JSON.stringify(["1d_view"]),
-    level:      "account"
-  }).catch(err => { console.warn(`view-attribution failed for ${p.label}:`, err.message); return { data: [] }; });
+  const [defaultRes, viewRes] = await Promise.all([
+    apiGet(`${currentClient.adAccountId}/insights`, {
+      fields,
+      time_range:     JSON.stringify({ since: allSince, until: allUntil }),
+      time_increment: incr,
+      level:          "account",
+      limit:          100
+    }),
+    apiGet(`${currentClient.adAccountId}/insights`, {
+      fields:                     "actions,date_start,date_stop",
+      time_range:                 JSON.stringify({ since: allSince, until: allUntil }),
+      time_increment:             incr,
+      action_attribution_windows: JSON.stringify(["1d_view"]),
+      level:                      "account",
+      limit:                      100
+    }).catch(err => { console.warn("view-attribution failed:", err.message); return { data: [] }; })
+  ]);
 
-  const results = await Promise.all(periods.map(async p => {
-    const [defaultRes, viewRes] = await Promise.all([callDefault(p), callView(p)]);
-    return { period: p, row: defaultRes.data?.[0] || {}, viewRow: viewRes.data?.[0] || {} };
+  const defaultRows = defaultRes.data || [];
+  const viewRows    = viewRes.data    || [];
+
+  return periods.map(p => ({
+    period:  p,
+    row:     aggregateRows(rowsWithin(defaultRows, p.since, p.until)),
+    viewRow: aggregateRows(rowsWithin(viewRows,    p.since, p.until))
   }));
-
-  return results;
 }
 
 /* ── Compute metrics for a single period ──────────────────── */
