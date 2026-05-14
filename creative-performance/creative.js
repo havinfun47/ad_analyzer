@@ -263,37 +263,99 @@ function applySort(rows) {
   });
 }
 
+/* ── Ad preview fetch + cache (Facebook feed iframe) ───────── */
+const PREVIEW_TTL    = 24 * 60 * 60 * 1000; // 24h
+const PREVIEW_FORMAT = "MOBILE_FEED_STANDARD";
+
+function previewCacheKey(adId) { return `cp_preview_v1::${adId}::${PREVIEW_FORMAT}`; }
+
+function readPreviewCache(adId) {
+  try {
+    const raw = localStorage.getItem(previewCacheKey(adId));
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (Date.now() - entry.timestamp > PREVIEW_TTL) return null;
+    return entry.html;
+  } catch { return null; }
+}
+function writePreviewCache(adId, html) {
+  try {
+    localStorage.setItem(previewCacheKey(adId), JSON.stringify({ timestamp: Date.now(), html }));
+  } catch { /* quota — ignore */ }
+}
+
+async function fetchAdPreview(adId) {
+  const cached = readPreviewCache(adId);
+  if (cached) return cached;
+  const data = await api(`${adId}/previews`, { ad_format: PREVIEW_FORMAT });
+  const raw  = data.data?.[0]?.body;
+  if (!raw) return null;
+  const html = raw
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&").replace(/&quot;/g, '"');
+  writePreviewCache(adId, html);
+  return html;
+}
+
+/* IntersectionObserver lazy loader for preview iframes */
+let _previewObserver = null;
+function setupPreviewLazyLoad() {
+  if (_previewObserver) _previewObserver.disconnect();
+  _previewObserver = new IntersectionObserver(async (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const slot = entry.target;
+      _previewObserver.unobserve(slot);
+      const adId = slot.dataset.adId;
+      try {
+        const html = await fetchAdPreview(adId);
+        if (html) {
+          slot.innerHTML = html;
+          slot.classList.add("loaded");
+        } else {
+          slot.innerHTML = renderFallbackThumb(slot.dataset.thumb, slot.dataset.format);
+        }
+      } catch (err) {
+        console.warn(`Preview failed for ${adId}:`, err.message);
+        slot.innerHTML = renderFallbackThumb(slot.dataset.thumb, slot.dataset.format);
+      }
+    }
+  }, { rootMargin: "300px 0px" }); // pre-load 300px before scroll into view
+
+  document.querySelectorAll(".cp-preview[data-ad-id]").forEach(el => _previewObserver.observe(el));
+}
+
+function renderFallbackThumb(thumbUrl, format) {
+  if (!thumbUrl) {
+    return `<div class="cp-thumb-empty">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+      </svg>
+    </div>`;
+  }
+  const play = format === "video"
+    ? `<div class="cp-play"><svg width="48" height="48" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.5)" stroke="white" stroke-width="1"/><polygon points="10,8 16,12 10,16"/></svg></div>`
+    : "";
+  return `<img src="${thumbUrl}" referrerpolicy="no-referrer" loading="lazy" onerror="this.style.display='none'">${play}`;
+}
+
 /* ── Render ────────────────────────────────────────────────── */
 function renderCard(row) {
-  const thumbEl = row.thumbnailUrl
-    ? `<img src="${row.thumbnailUrl}" referrerpolicy="no-referrer" loading="lazy" onerror="this.style.display='none'">`
-    : `<div class="cp-thumb-empty">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
-        </svg>
-      </div>`;
-
-  const playOverlay = row.format === "video"
-    ? `<div class="cp-play">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="white" stroke="none">
-          <circle cx="12" cy="12" r="11" fill="rgba(0,0,0,0.5)" stroke="white" stroke-width="1"/>
-          <polygon points="10,8 16,12 10,16"/>
-        </svg>
-      </div>`
-    : "";
-
   const statusClass = row.status === "ACTIVE" ? "active" : "paused";
   const statusLabel = row.status === "ACTIVE" ? "Active" : "Paused";
+  const safeThumb   = (row.thumbnailUrl || "").replace(/"/g, "&quot;");
 
   return `
     <div class="cp-card" data-ad-id="${row.adId}">
-      <div class="cp-thumb">
-        ${thumbEl}
-        ${playOverlay}
-        <div class="cp-badges">
-          <span class="cp-badge ${row.format}">${row.format}</span>
-          <span class="cp-badge ${statusClass}">${statusLabel}</span>
+      <div class="cp-preview" data-ad-id="${row.adId}" data-thumb="${safeThumb}" data-format="${row.format}">
+        <div class="cp-preview-loading">
+          <div class="cp-spinner"></div>
+          <div>Loading post…</div>
         </div>
+      </div>
+      <div class="cp-badges">
+        <span class="cp-badge ${row.format}">${row.format}</span>
+        <span class="cp-badge ${statusClass}">${statusLabel}</span>
       </div>
       <div class="cp-card-body">
         <div class="cp-name" title="${row.name.replace(/"/g, '&quot;')}">${row.name}</div>
@@ -330,6 +392,7 @@ function renderGrid() {
   } else {
     empty.style.display = "none";
     grid.innerHTML = filtered.map(renderCard).join("");
+    setupPreviewLazyLoad();
   }
 
   // Summary line
