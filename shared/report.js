@@ -1809,13 +1809,22 @@ function sumField(rows, field) {
   return rows.reduce((s, r) => s + parseFloat(r[field] || 0), 0);
 }
 function sumActionsByType(rows, field) {
+  // Preserve all per-action fields (value + attribution-window breakdowns like 1d_view)
   const byType = {};
   for (const r of rows) {
     for (const a of (r[field] || [])) {
-      byType[a.action_type] = (byType[a.action_type] || 0) + parseFloat(a.value || 0);
+      if (!byType[a.action_type]) byType[a.action_type] = {};
+      for (const [k, v] of Object.entries(a)) {
+        if (k === "action_type") continue;
+        byType[a.action_type][k] = (byType[a.action_type][k] || 0) + parseFloat(v || 0);
+      }
     }
   }
-  return Object.entries(byType).map(([action_type, value]) => ({ action_type, value: String(value) }));
+  return Object.entries(byType).map(([action_type, vals]) => {
+    const obj = { action_type };
+    for (const [k, v] of Object.entries(vals)) obj[k] = String(v);
+    return obj;
+  });
 }
 function weightedAvgActionsByType(rows, field, weightField) {
   // weighted by the per-period weightField (e.g. video_view count)
@@ -1889,7 +1898,7 @@ function rowsWithin(rows, since, until) {
   return rows.filter(r => r.date_start >= since && r.date_start <= until);
 }
 
-/* ── Fetch insights — TWO total API calls instead of 10 ───── */
+/* ── Fetch insights — ONE total API call ──────────────────── */
 async function fetchAnalysisInsights(mode) {
   const periods = getAnalysisPeriods(mode);
   // Periods are currently sorted current-first; we need the overall date range
@@ -1908,36 +1917,27 @@ async function fetchAnalysisInsights(mode) {
     "date_start", "date_stop"
   ].join(",");
 
-  const [defaultRes, viewRes] = await Promise.all([
-    apiGet(`${currentClient.adAccountId}/insights`, {
-      fields,
-      time_range:     JSON.stringify({ since: allSince, until: allUntil }),
-      time_increment: incr,
-      level:          "account",
-      limit:          100
-    }),
-    apiGet(`${currentClient.adAccountId}/insights`, {
-      fields:                     "actions,date_start,date_stop",
-      time_range:                 JSON.stringify({ since: allSince, until: allUntil }),
-      time_increment:             incr,
-      action_attribution_windows: JSON.stringify(["1d_view"]),
-      level:                      "account",
-      limit:                      100
-    }).catch(err => { console.warn("view-attribution failed:", err.message); return { data: [] }; })
-  ]);
+  // Single call requesting both default and 1d_view attribution.
+  // Meta returns the actions array with a `value` (= default) and a separate
+  // `1d_view` field per action, so we can derive % view conversion in one pass.
+  const res = await apiGet(`${currentClient.adAccountId}/insights`, {
+    fields,
+    time_range:                 JSON.stringify({ since: allSince, until: allUntil }),
+    time_increment:             incr,
+    action_attribution_windows: JSON.stringify(["default", "1d_view"]),
+    level:                      "account",
+    limit:                      100
+  });
 
-  const defaultRows = defaultRes.data || [];
-  const viewRows    = viewRes.data    || [];
-
+  const rows = res.data || [];
   return periods.map(p => ({
-    period:  p,
-    row:     aggregateRows(rowsWithin(defaultRows, p.since, p.until)),
-    viewRow: aggregateRows(rowsWithin(viewRows,    p.since, p.until))
+    period: p,
+    row:    aggregateRows(rowsWithin(rows, p.since, p.until))
   }));
 }
 
 /* ── Compute metrics for a single period ──────────────────── */
-function computePeriodMetrics(period, row, viewRow) {
+function computePeriodMetrics(period, row) {
   const spend       = parseFloat(row.spend || 0);
   const impressions = parseFloat(row.impressions || 0);
   const reach       = parseFloat(row.reach || 0);
@@ -1967,11 +1967,12 @@ function computePeriodMetrics(period, row, viewRow) {
   const thumbStop   = impressions > 0 ? (v3sec / impressions) * 100 : 0;
   const holdRate    = v3sec       > 0 ? (thruplays / v3sec) * 100 : 0;
 
-  // viewRow is a second insights call with action_attribution_windows=['1d_view'].
-  // Its actions.value represents purchases that converted within 1 day after viewing.
-  const viewPurch   = viewRow ? (getPurchaseAction(viewRow)?.value
-                                  ? parseFloat(getPurchaseAction(viewRow).value) : 0) : 0;
-  const viewPct     = purchases > 0 ? (viewPurch / purchases) * 100 : 0;
+  // % view conversion: view-only purchases / total purchases.
+  // Total comes from purchase.value (default attribution). View-only comes from
+  // the purchase action's `1d_view` breakdown field (returned when the request
+  // includes action_attribution_windows=['default','1d_view']).
+  const viewPurch   = purchase ? parseFloat(purchase["1d_view"] || 0) : 0;
+  const viewPct     = purchases > 0 ? Math.min(100, (viewPurch / purchases) * 100) : 0;
 
   // Days in period — for "daily ad spent"
   const dStart = parseDateStr(period.since);
@@ -2095,9 +2096,9 @@ async function loadAnalysis(mode) {
   </div>`;
   try {
     const raw  = await fetchAnalysisInsights(mode);
-    const cols = raw.map(({ period, row, viewRow }) => ({
+    const cols = raw.map(({ period, row }) => ({
       period,
-      metrics: computePeriodMetrics(period, row, viewRow)
+      metrics: computePeriodMetrics(period, row)
     }));
     _analysisCache[mode] = cols;
     renderAnalysisFromCache();
