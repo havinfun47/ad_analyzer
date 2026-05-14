@@ -297,17 +297,21 @@ async function fetchAdPreview(adId) {
   return html;
 }
 
-/* Inject preview iframe HTML into a slot — sets container height to match iframe */
+/* Inject preview iframe HTML into a slot — gives iframe enough vertical room
+   to show the whole post + visible comments without clipping */
+const PREVIEW_IFRAME_HEIGHT = 820; // generous fit for FB mobile feed preview + comments
+
 function injectPreviewHtml(slot, html) {
   slot.innerHTML = html;
   const iframe = slot.querySelector("iframe");
   if (!iframe) return;
-  // Suppress inner scrollbars
-  iframe.setAttribute("scrolling", "no");
-  iframe.style.overflow = "hidden";
-  // Size the container to match the iframe's natural height
-  const h = parseInt(iframe.getAttribute("height"), 10);
-  if (h) slot.style.height = `${h}px`;
+  // Force a tall iframe — Meta's default 568px clips ads that include comments
+  iframe.setAttribute("height", PREVIEW_IFRAME_HEIGHT);
+  iframe.style.height = `${PREVIEW_IFRAME_HEIGHT}px`;
+  iframe.style.width  = "100%";
+  // Allow internal scroll only as a fallback for unusually tall content
+  iframe.setAttribute("scrolling", "auto");
+  slot.style.height = `${PREVIEW_IFRAME_HEIGHT}px`;
   slot.classList.add("loaded");
 }
 
