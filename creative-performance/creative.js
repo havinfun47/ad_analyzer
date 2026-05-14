@@ -297,6 +297,37 @@ async function fetchAdPreview(adId) {
   return html;
 }
 
+/* Inject preview iframe HTML into a slot — sets container height to match iframe */
+function injectPreviewHtml(slot, html) {
+  slot.innerHTML = html;
+  const iframe = slot.querySelector("iframe");
+  if (!iframe) return;
+  // Suppress inner scrollbars
+  iframe.setAttribute("scrolling", "no");
+  iframe.style.overflow = "hidden";
+  // Size the container to match the iframe's natural height
+  const h = parseInt(iframe.getAttribute("height"), 10);
+  if (h) slot.style.height = `${h}px`;
+  slot.classList.add("loaded");
+}
+
+// Listen for FB postMessage height updates (some Meta iframes broadcast their content height)
+window.addEventListener("message", (e) => {
+  if (!e.origin || !e.origin.includes("facebook.com")) return;
+  let payload = e.data;
+  if (typeof payload === "string") {
+    try { payload = JSON.parse(payload); } catch { return; }
+  }
+  const h = payload?.height || payload?.frameHeight || payload?.iframe_height;
+  if (!h || h < 100) return;
+  document.querySelectorAll(".cp-preview iframe").forEach(iframe => {
+    if (iframe.contentWindow === e.source) {
+      iframe.style.height = `${h}px`;
+      iframe.parentElement.style.height = `${h}px`;
+    }
+  });
+});
+
 /* IntersectionObserver lazy loader for preview iframes */
 let _previewObserver = null;
 function setupPreviewLazyLoad() {
@@ -310,8 +341,7 @@ function setupPreviewLazyLoad() {
       try {
         const html = await fetchAdPreview(adId);
         if (html) {
-          slot.innerHTML = html;
-          slot.classList.add("loaded");
+          injectPreviewHtml(slot, html);
         } else {
           slot.innerHTML = renderFallbackThumb(slot.dataset.thumb, slot.dataset.format);
         }

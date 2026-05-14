@@ -80,14 +80,14 @@
     .cp-preview {
       position: relative;
       width: 100%;
-      min-height: 480px;
+      min-height: 480px; /* baseline while loading; overridden by JS once iframe is in */
       background: #fff;
       overflow: hidden;
       display: flex; align-items: flex-start; justify-content: center;
     }
+    .cp-preview.loaded { min-height: 0; } /* let JS-set height be exact */
     .cp-preview iframe {
       border: 0 !important;
-      width: 100% !important;
       max-width: 100% !important;
       display: block;
     }
