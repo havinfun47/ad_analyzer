@@ -1817,20 +1817,30 @@ async function fetchAnalysisInsights(mode) {
     "purchase_roas"
   ].join(",");
 
-  const responses = await Promise.all(periods.map(p =>
-    apiGet(`${currentClient.adAccountId}/insights`, {
-      fields,
-      time_range:                JSON.stringify({ since: p.since, until: p.until }),
-      action_attribution_windows: JSON.stringify(["1d_view", "7d_click"]),
-      level:                     "account"
-    }).catch(() => ({ data: [] }))
-  ));
+  // Two parallel calls per period: default attribution (for all standard metrics),
+  // plus a 1d_view attribution call (for % view conversion).
+  const callDefault = p => apiGet(`${currentClient.adAccountId}/insights`, {
+    fields,
+    time_range: JSON.stringify({ since: p.since, until: p.until }),
+    level:      "account"
+  });
+  const callView = p => apiGet(`${currentClient.adAccountId}/insights`, {
+    fields:    "actions",
+    time_range: JSON.stringify({ since: p.since, until: p.until }),
+    action_attribution_windows: JSON.stringify(["1d_view"]),
+    level:      "account"
+  }).catch(err => { console.warn(`view-attribution failed for ${p.label}:`, err.message); return { data: [] }; });
 
-  return periods.map((p, i) => ({ period: p, row: responses[i].data?.[0] || {} }));
+  const results = await Promise.all(periods.map(async p => {
+    const [defaultRes, viewRes] = await Promise.all([callDefault(p), callView(p)]);
+    return { period: p, row: defaultRes.data?.[0] || {}, viewRow: viewRes.data?.[0] || {} };
+  }));
+
+  return results;
 }
 
 /* ── Compute metrics for a single period ──────────────────── */
-function computePeriodMetrics(period, row) {
+function computePeriodMetrics(period, row, viewRow) {
   const spend       = parseFloat(row.spend || 0);
   const impressions = parseFloat(row.impressions || 0);
   const reach       = parseFloat(row.reach || 0);
@@ -1858,7 +1868,10 @@ function computePeriodMetrics(period, row) {
   const thumbStop   = impressions > 0 ? (v3sec / impressions) * 100 : 0;
   const holdRate    = v3sec       > 0 ? (thruplays / v3sec) * 100 : 0;
 
-  const viewPurch   = getViewThroughPurchases(row);
+  // viewRow is a second insights call with action_attribution_windows=['1d_view'].
+  // Its actions.value represents purchases that converted within 1 day after viewing.
+  const viewPurch   = viewRow ? (getPurchaseAction(viewRow)?.value
+                                  ? parseFloat(getPurchaseAction(viewRow).value) : 0) : 0;
   const viewPct     = purchases > 0 ? (viewPurch / purchases) * 100 : 0;
 
   // Days in period — for "daily ad spent"
@@ -1983,10 +1996,14 @@ async function loadAnalysis(mode) {
   </div>`;
   try {
     const raw  = await fetchAnalysisInsights(mode);
-    const cols = raw.map(({ period, row }) => ({ period, metrics: computePeriodMetrics(period, row) }));
+    const cols = raw.map(({ period, row, viewRow }) => ({
+      period,
+      metrics: computePeriodMetrics(period, row, viewRow)
+    }));
     _analysisCache[mode] = cols;
     renderAnalysisFromCache();
   } catch (err) {
+    console.error("Analysis fetch failed:", err);
     wrap.innerHTML = `<div class="table-wrapper" style="padding:32px;text-align:center;">
       <p style="color:var(--red);font-size:13px;">${err.message}</p>
     </div>`;
