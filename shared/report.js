@@ -1812,7 +1812,7 @@ async function fetchAnalysisInsights(mode) {
     "actions", "action_values", "cost_per_action_type",
     "outbound_clicks", "inline_link_clicks",
     "cost_per_inline_link_click", "inline_link_click_ctr",
-    "video_3_sec_watched_actions", "video_thruplay_watched_actions",
+    "video_thruplay_watched_actions",
     "video_avg_time_watched_actions",
     "purchase_roas"
   ].join(",");
@@ -1862,7 +1862,9 @@ function computePeriodMetrics(period, row, viewRow) {
   const cr          = outClicks > 0 ? (purchases / outClicks) * 100 : 0;
   const aov         = purchases > 0 ? purchaseVal / purchases : null;
 
-  const v3sec       = sumActionArray(row.video_3_sec_watched_actions);
+  // Meta deprecated `video_3_sec_watched_actions` — 3-second plays now live in the
+  // `actions` array as action_type=video_view (Meta defines a video view as ≥3s)
+  const v3sec       = getAction(row, "video_view");
   const thruplays   = sumActionArray(row.video_thruplay_watched_actions);
   const avgWatch    = sumActionArray(row.video_avg_time_watched_actions); // already an avg in seconds
   const thumbStop   = impressions > 0 ? (v3sec / impressions) * 100 : 0;
