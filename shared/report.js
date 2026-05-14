@@ -1401,6 +1401,14 @@ function injectTrendsUI() {
         <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
       </svg>
       Trends
+    </button>
+    <button class="tab-btn" data-tab="analysis">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <line x1="3" y1="9" x2="21" y2="9"/>
+        <line x1="9" y1="9" x2="9" y2="21"/>
+      </svg>
+      Analysis
     </button>`;
   rc.before(tabBar);
 
@@ -1421,12 +1429,31 @@ function injectTrendsUI() {
     </div>
     <div id="trends-table-wrap"></div>`;
   rc.after(trendsDiv);
+
+  // Analysis content (after trends, inside <main>)
+  const analysisDiv         = document.createElement("div");
+  analysisDiv.id            = "analysis-content";
+  analysisDiv.className     = "no-print";
+  analysisDiv.style.display = "none";
+  analysisDiv.innerHTML     = `
+    <div class="trends-header">
+      <div class="trends-title-row">
+        <div class="section-label">Performance Analysis</div>
+        <div class="trends-toggle" data-toggle-group="analysis">
+          <button class="toggle-btn"       data-analysis-mode="weekly">Weekly</button>
+          <button class="toggle-btn active" data-analysis-mode="monthly">Monthly</button>
+          <button class="toggle-btn"       data-analysis-mode="quarterly">Quarterly</button>
+        </div>
+      </div>
+    </div>
+    <div id="analysis-table-wrap"></div>`;
+  trendsDiv.after(analysisDiv);
 }
 
 /* ── Tab + toggle event handling ──────────────────────────── */
 function initTabs() {
   document.addEventListener("click", e => {
-    // Main tabs
+    // Main tabs (Report / Trends / Analysis)
     const tabBtn = e.target.closest(".tab-btn[data-tab]");
     if (tabBtn) {
       const tab = tabBtn.dataset.tab;
@@ -1436,22 +1463,35 @@ function initTabs() {
         tab === "report" ? "" : "none";
       const tc = document.getElementById("trends-content");
       if (tc) tc.style.display = tab === "trends" ? "" : "none";
-      if (tab === "trends" && !_trendsCache[_trendsMode]) loadTrends(_trendsMode);
+      const ac = document.getElementById("analysis-content");
+      if (ac) ac.style.display = tab === "analysis" ? "" : "none";
+
+      if (tab === "trends"   && !_trendsCache[_trendsMode])     loadTrends(_trendsMode);
+      if (tab === "analysis" && !_analysisCache[_analysisMode]) loadAnalysis(_analysisMode);
       return;
     }
 
-    // Weekly/Monthly toggle
-    const toggleBtn = e.target.closest(".toggle-btn[data-mode]");
-    if (toggleBtn) {
-      const mode = toggleBtn.dataset.mode;
+    // Trends weekly/monthly toggle
+    const trendsToggle = e.target.closest(".toggle-btn[data-mode]");
+    if (trendsToggle) {
+      const mode = trendsToggle.dataset.mode;
       _trendsMode = mode;
       document.querySelectorAll(".toggle-btn[data-mode]").forEach(b =>
-        b.classList.toggle("active", b === toggleBtn));
-      if (_trendsCache[mode]) {
-        renderTrendsFromCache();
-      } else {
-        loadTrends(mode);
-      }
+        b.classList.toggle("active", b === trendsToggle));
+      if (_trendsCache[mode]) renderTrendsFromCache();
+      else loadTrends(mode);
+      return;
+    }
+
+    // Analysis weekly/monthly/quarterly toggle
+    const analysisToggle = e.target.closest(".toggle-btn[data-analysis-mode]");
+    if (analysisToggle) {
+      const mode = analysisToggle.dataset.analysisMode;
+      _analysisMode = mode;
+      document.querySelectorAll(".toggle-btn[data-analysis-mode]").forEach(b =>
+        b.classList.toggle("active", b === analysisToggle));
+      if (_analysisCache[mode]) renderAnalysisFromCache();
+      else loadAnalysis(mode);
     }
   });
 }
@@ -1645,6 +1685,327 @@ function renderTrendsFromCache() {
   if (!wrap) return;
   const rows = _trendsCache[_trendsMode] || [];
   wrap.innerHTML = `<div class="table-wrapper">${renderTrendsTable(rows, _trendsMode)}</div>`;
+}
+
+/* =========================================================
+   Performance Analysis Tab
+   ========================================================= */
+
+let _analysisMode  = "monthly";
+let _analysisCache = {}; // { quarterly: cols, monthly: cols, weekly: cols }
+
+const TARGET_ROAS_DEFAULTS = { root: 2.9, toothpod: 1.0, mycosoul: 1.0 };
+
+function getTargetRoas() {
+  const key = `analysis_target_roas::${currentClient?.key || "default"}`;
+  const stored = localStorage.getItem(key);
+  if (stored != null && !isNaN(parseFloat(stored))) return parseFloat(stored);
+  return TARGET_ROAS_DEFAULTS[currentClient?.key] ?? 1.0;
+}
+function setTargetRoas(value) {
+  const key = `analysis_target_roas::${currentClient?.key || "default"}`;
+  localStorage.setItem(key, String(value));
+}
+
+/* ── Period generation ────────────────────────────────────── */
+function getAnalysisPeriods(mode) {
+  const periods = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const monthShort = d => d.toLocaleDateString("en-CA", { month: "short" });
+
+  if (mode === "quarterly") {
+    // Current quarter (partial) + last 4 complete quarters
+    const curQ = Math.floor(today.getMonth() / 3);
+    const curY = today.getFullYear();
+    const curQStart = new Date(curY, curQ * 3, 1);
+    periods.push({
+      since: formatDate(curQStart),
+      until: formatDate(today),
+      label: `${monthShort(curQStart)} - ${monthShort(today)} ${today.getDate()}`,
+      key:   `cur-q-${curY}-${curQ}`
+    });
+    for (let i = 1; i <= 4; i++) {
+      let q = curQ - i, y = curY;
+      while (q < 0) { q += 4; y -= 1; }
+      const qStart = new Date(y, q * 3, 1);
+      const qEnd   = new Date(y, q * 3 + 3, 0);
+      periods.push({
+        since: formatDate(qStart),
+        until: formatDate(qEnd),
+        label: `Q${q + 1} '${String(y).slice(2)}`,
+        key:   `q-${y}-${q}`
+      });
+    }
+  } else if (mode === "monthly") {
+    // Current month (partial) + last 4 complete months
+    const curM = today.getMonth();
+    const curY = today.getFullYear();
+    const curMStart = new Date(curY, curM, 1);
+    periods.push({
+      since: formatDate(curMStart),
+      until: formatDate(today),
+      label: `${monthShort(curMStart)} 1 - ${today.getDate()}`,
+      key:   `cur-m-${curY}-${curM}`
+    });
+    for (let i = 1; i <= 4; i++) {
+      let m = curM - i, y = curY;
+      while (m < 0) { m += 12; y -= 1; }
+      const mStart = new Date(y, m, 1);
+      const mEnd   = new Date(y, m + 1, 0);
+      periods.push({
+        since: formatDate(mStart),
+        until: formatDate(mEnd),
+        label: `${monthShort(mStart)} '${String(y).slice(2)}`,
+        key:   `m-${y}-${m}`
+      });
+    }
+  } else { // weekly: current week (partial) + last 4 complete weeks
+    const dow = today.getDay() === 0 ? 7 : today.getDay(); // Monday=1..Sunday=7
+    const curWStart = new Date(today);
+    curWStart.setDate(today.getDate() - (dow - 1));
+    periods.push({
+      since: formatDate(curWStart),
+      until: formatDate(today),
+      label: `Wk ${monthShort(curWStart)} ${curWStart.getDate()}`,
+      key:   `cur-w-${formatDate(curWStart)}`
+    });
+    for (let i = 1; i <= 4; i++) {
+      const wStart = new Date(curWStart);
+      wStart.setDate(curWStart.getDate() - 7 * i);
+      const wEnd = new Date(wStart);
+      wEnd.setDate(wStart.getDate() + 6);
+      periods.push({
+        since: formatDate(wStart),
+        until: formatDate(wEnd),
+        label: `Wk ${monthShort(wStart)} ${wStart.getDate()}`,
+        key:   `w-${formatDate(wStart)}`
+      });
+    }
+  }
+  return periods;
+}
+
+/* ── Action / video helpers ───────────────────────────────── */
+function sumActionArray(arr) {
+  if (!Array.isArray(arr)) return 0;
+  return arr.reduce((s, x) => s + parseFloat(x.value || 0), 0);
+}
+function getPurchaseAction(row) {
+  // Prefer fb_pixel_purchase, fall back to omni_purchase
+  const arr = row?.actions || [];
+  return arr.find(x => x.action_type === PURCHASE_ACTION)
+      || arr.find(x => x.action_type === "omni_purchase")
+      || arr.find(x => x.action_type === "purchase");
+}
+function getViewThroughPurchases(row) {
+  const a = getPurchaseAction(row);
+  if (!a) return 0;
+  return parseFloat(a["1d_view"] || 0);
+}
+
+/* ── Fetch all periods in parallel ────────────────────────── */
+async function fetchAnalysisInsights(mode) {
+  const periods = getAnalysisPeriods(mode);
+  const fields = [
+    "spend", "impressions", "reach", "cpm", "frequency",
+    "actions", "action_values", "cost_per_action_type",
+    "outbound_clicks", "inline_link_clicks",
+    "cost_per_inline_link_click", "inline_link_click_ctr",
+    "video_3_sec_watched_actions", "video_thruplay_watched_actions",
+    "video_avg_time_watched_actions",
+    "purchase_roas"
+  ].join(",");
+
+  const responses = await Promise.all(periods.map(p =>
+    apiGet(`${currentClient.adAccountId}/insights`, {
+      fields,
+      time_range:                JSON.stringify({ since: p.since, until: p.until }),
+      action_attribution_windows: JSON.stringify(["1d_view", "7d_click"]),
+      level:                     "account"
+    }).catch(() => ({ data: [] }))
+  ));
+
+  return periods.map((p, i) => ({ period: p, row: responses[i].data?.[0] || {} }));
+}
+
+/* ── Compute metrics for a single period ──────────────────── */
+function computePeriodMetrics(period, row) {
+  const spend       = parseFloat(row.spend || 0);
+  const impressions = parseFloat(row.impressions || 0);
+  const reach       = parseFloat(row.reach || 0);
+  const cpm         = parseFloat(row.cpm || 0);
+  const freq        = parseFloat(row.frequency || (reach > 0 ? impressions / reach : 0));
+  const cpc         = parseFloat(row.cost_per_inline_link_click || 0);
+  const ctr         = parseFloat(row.inline_link_click_ctr || 0);
+
+  const purchase    = getPurchaseAction(row);
+  const purchases   = purchase ? parseFloat(purchase.value || 0) : 0;
+  const purchaseVal = getActionValue(row, PURCHASE_ACTION) || getActionValue(row, "omni_purchase");
+  const cpa         = purchases > 0 ? spend / purchases : null;
+  const roas        = parseRoas(row) ?? (spend > 0 ? purchaseVal / spend : 0);
+
+  const addToCart   = getAction(row, "offsite_conversion.fb_pixel_add_to_cart") || getAction(row, "add_to_cart");
+  const cATC        = addToCart > 0 ? spend / addToCart : null;
+
+  const outClicks   = getOutboundClicks(row);
+  const cr          = outClicks > 0 ? (purchases / outClicks) * 100 : 0;
+  const aov         = purchases > 0 ? purchaseVal / purchases : null;
+
+  const v3sec       = sumActionArray(row.video_3_sec_watched_actions);
+  const thruplays   = sumActionArray(row.video_thruplay_watched_actions);
+  const avgWatch    = sumActionArray(row.video_avg_time_watched_actions); // already an avg in seconds
+  const thumbStop   = impressions > 0 ? (v3sec / impressions) * 100 : 0;
+  const holdRate    = v3sec       > 0 ? (thruplays / v3sec) * 100 : 0;
+
+  const viewPurch   = getViewThroughPurchases(row);
+  const viewPct     = purchases > 0 ? (viewPurch / purchases) * 100 : 0;
+
+  // Days in period — for "daily ad spent"
+  const dStart = parseDateStr(period.since);
+  const dStop  = parseDateStr(period.until);
+  const days   = Math.max(1, Math.round((dStop - dStart) / 86400000) + 1);
+
+  return {
+    period,
+    dailySpend:   spend / days,
+    spend,
+    thumbStop, holdRate, avgWatch,
+    cpm, cpc, ctr,
+    cATC, purchases, cpa, purchaseVal, roas,
+    aov, cr, freq, viewPct
+  };
+}
+
+/* ── Cell colour: row-level heatmap ───────────────────────── */
+function analysisCellBg(value, min, max, lowerIsBetter) {
+  if (value == null || min == null || max == null || min === max) return "";
+  const range = max - min;
+  const ratio = (value - min) / range; // 0=worst, 1=best when higher-is-better
+  const good  = lowerIsBetter ? 1 - ratio : ratio;
+  // Brighter scale than trends — closer to the spreadsheet look
+  if (good >= 0.5) {
+    const alpha = 0.10 + (good - 0.5) * 0.50; // 0.10–0.35
+    return `background-color:rgba(0,255,106,${alpha.toFixed(3)});`;
+  } else {
+    const alpha = 0.10 + (0.5 - good) * 0.50;
+    return `background-color:rgba(255,82,82,${alpha.toFixed(3)});`;
+  }
+}
+
+/* ── Metric row definitions ───────────────────────────────── */
+function getAnalysisMetricRows() {
+  const c = currentClient?.currency || "CAD";
+  const sec = (v) => {
+    if (!v) return "0:00";
+    const s = Math.round(v);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  return [
+    { label: "Daily Ad spent",   key: "dailySpend",  fmt: v => formatCurrency(v, c),         direction: "neutral" },
+    { label: "Ad spent",         key: "spend",       fmt: v => formatCurrency(v, c),         direction: "neutral" },
+    { label: "thumb-stop ratio", key: "thumbStop",   fmt: v => formatPct(v),                 direction: "higher" },
+    { label: "hold rate (thru)", key: "holdRate",    fmt: v => formatPct(v),                 direction: "higher" },
+    { label: "average watch time", key: "avgWatch",  fmt: sec,                               direction: "higher" },
+    { label: "Average CPM",      key: "cpm",         fmt: v => formatCurrency(v, c),         direction: "lower"  },
+    { label: "Average CPC",      key: "cpc",         fmt: v => formatCurrency(v, c),         direction: "lower"  },
+    { label: "Average CTR",      key: "ctr",         fmt: v => formatPct(v),                 direction: "higher" },
+    { label: "cATC",             key: "cATC",        fmt: v => v != null ? formatCurrency(v, c) : "—", direction: "lower"  },
+    { label: "purchases",        key: "purchases",   fmt: v => formatNum(v, 0),              direction: "higher" },
+    { label: "cpa",              key: "cpa",         fmt: v => v != null ? formatCurrency(v, c) : "—", direction: "lower"  },
+    { label: "purchase value",   key: "purchaseVal", fmt: v => formatCurrency(v, c),         direction: "higher" },
+    { label: "ROAS current (FB)",key: "roas",        fmt: v => formatRoas(v),                direction: "higher" },
+    { label: "target ROAS FB",   key: "__target",                                            direction: "target" },
+    { label: "AOV",              key: "aov",         fmt: v => v != null ? formatCurrency(v, c) : "—", direction: "higher" },
+    { label: "CR",               key: "cr",          fmt: v => formatPct(v),                 direction: "higher" },
+    { label: "Frequency",        key: "freq",        fmt: v => formatNum(v, 2),              direction: "lower"  },
+    { label: "% view conversion",key: "viewPct",     fmt: v => formatPct(v),                 direction: "higher" },
+  ];
+}
+
+/* ── Render the Analysis table ────────────────────────────── */
+function renderAnalysisTable(cols, mode) {
+  if (!cols.length) return `<div class="table-empty">No data.</div>`;
+  const metrics = getAnalysisMetricRows();
+  const target  = getTargetRoas();
+
+  // Header row
+  const headerCells = cols.map(c => `<th class="th-num">${c.period.label}</th>`).join("");
+
+  // Per-metric row with heatmap colours
+  const bodyRows = metrics.map(m => {
+    if (m.direction === "target") {
+      // Special row: editable target ROAS input in the first data column, others blank
+      const inputCell = `<td class="td-num analysis-target">
+        <input type="number" step="0.1" min="0" id="analysis-target-roas" value="${target}" />
+      </td>`;
+      const blankCells = cols.slice(1).map(() => `<td class="td-num"></td>`).join("");
+      return `<tr class="analysis-row-target">
+        <td class="td-name">${m.label}</td>
+        ${inputCell}${blankCells}
+      </tr>`;
+    }
+
+    const vals = cols.map(c => c.metrics[m.key]).filter(v => v != null && isFinite(v));
+    let mn = null, mx = null;
+    if (m.direction !== "neutral" && vals.length >= 2) {
+      mn = Math.min(...vals);
+      mx = Math.max(...vals);
+    }
+
+    const cells = cols.map(c => {
+      const v   = c.metrics[m.key];
+      const bg  = (m.direction === "higher" || m.direction === "lower")
+                  ? analysisCellBg(v, mn, mx, m.direction === "lower")
+                  : "";
+      const txt = (v == null || (typeof v === "number" && !isFinite(v))) ? "—" : m.fmt(v);
+      return `<td class="td-num"${bg ? ` style="${bg}"` : ""}>${txt}</td>`;
+    }).join("");
+
+    return `<tr><td class="td-name">${m.label}</td>${cells}</tr>`;
+  }).join("");
+
+  return `
+    <div class="table-scroll">
+      <table class="data-table analysis-table">
+        <thead><tr><th class="th-name">Metric</th>${headerCells}</tr></thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>`;
+}
+
+/* ── Orchestration ────────────────────────────────────────── */
+async function loadAnalysis(mode) {
+  const wrap = document.getElementById("analysis-table-wrap");
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="table-wrapper">
+    <div class="skeleton skeleton-table" style="height:480px;border-radius:0;"></div>
+  </div>`;
+  try {
+    const raw  = await fetchAnalysisInsights(mode);
+    const cols = raw.map(({ period, row }) => ({ period, metrics: computePeriodMetrics(period, row) }));
+    _analysisCache[mode] = cols;
+    renderAnalysisFromCache();
+  } catch (err) {
+    wrap.innerHTML = `<div class="table-wrapper" style="padding:32px;text-align:center;">
+      <p style="color:var(--red);font-size:13px;">${err.message}</p>
+    </div>`;
+  }
+}
+
+function renderAnalysisFromCache() {
+  const wrap = document.getElementById("analysis-table-wrap");
+  if (!wrap) return;
+  const cols = _analysisCache[_analysisMode] || [];
+  wrap.innerHTML = `<div class="table-wrapper">${renderAnalysisTable(cols, _analysisMode)}</div>`;
+  // Wire target ROAS input
+  const input = document.getElementById("analysis-target-roas");
+  if (input) {
+    input.addEventListener("change", e => {
+      const v = parseFloat(e.target.value);
+      if (!isNaN(v) && v >= 0) setTargetRoas(v);
+    });
+  }
 }
 
 /* ── Bootstrap ─────────────────────────────────────────────── */

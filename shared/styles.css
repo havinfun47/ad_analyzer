@@ -1185,3 +1185,68 @@ input[type="date"]:focus { border-color: var(--accent); }
   max-width: 100%;
   border-radius: 8px;
 }
+
+/* ── Performance Analysis tab ─────────────────────────────── */
+.analysis-table {
+  font-size: 12px;
+  table-layout: fixed;
+}
+.analysis-table th,
+.analysis-table td {
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+.analysis-table thead th {
+  font-family: var(--font-head);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+.analysis-table tbody td.td-name {
+  font-family: var(--font-head);
+  font-weight: 500;
+  color: var(--text);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  background: var(--bg-surface);
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  border-right: 1px solid var(--border);
+}
+.analysis-table tbody td.td-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--text);
+}
+.analysis-table tbody tr:nth-child(odd) td.td-name { background: #131313; }
+.analysis-table tbody tr:nth-child(even) td.td-name { background: #161616; }
+
+.analysis-row-target td.td-name {
+  background: rgba(0, 150, 255, 0.10) !important;
+  color: var(--text);
+  font-weight: 600;
+}
+.analysis-target { background: rgba(0, 150, 255, 0.04); }
+.analysis-target input {
+  width: 64px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.analysis-target input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
