@@ -116,6 +116,13 @@
       letter-spacing: -0.015em; color: var(--text); line-height: 1;
       margin-bottom: 10px;
     }
+    .secondary-value.positive { color: var(--accent); }
+    .secondary-value.negative { color: var(--red); }
+    .secondary-sub {
+      font-size: 11px; color: var(--dim);
+      font-family: var(--font-head); letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
 
     /* Bonus card (smaller, secondary in visual weight) */
     .bonus-card {
@@ -183,6 +190,11 @@
       <div class="secondary-card">
         <div class="secondary-label">Ad Spend</div>
         <div class="secondary-value" id="spend">—</div>
+      </div>
+      <div class="secondary-card">
+        <div class="secondary-label">Gross Profit</div>
+        <div class="secondary-value" id="gross-profit">—</div>
+        <div class="secondary-sub" id="gross-profit-sub"></div>
       </div>
     </div>
 
@@ -294,10 +306,18 @@
       document.getElementById("spend").textContent   = formatCurrency(m.spend);
       document.getElementById("roas").textContent    = formatRoas(m.roas);
 
-      // Bonus
+      // Gross Profit = revenue - (spend * breakeven ROAS)
       const breakevenRev = m.spend * BREAKEVEN_ROAS;
       const grossProfit  = m.revenue - breakevenRev;
-      const bonus        = Math.max(0, grossProfit) * BONUS_RATE;
+      const gpEl  = document.getElementById("gross-profit");
+      const gpSub = document.getElementById("gross-profit-sub");
+      gpEl.textContent = formatCurrency(grossProfit);
+      gpEl.classList.toggle("positive", grossProfit > 0);
+      gpEl.classList.toggle("negative", grossProfit < 0);
+      gpSub.textContent = `Breakeven revenue: ${formatCurrency(breakevenRev)}`;
+
+      // Bonus = 10% of gross profit (floored at 0)
+      const bonus = Math.max(0, grossProfit) * BONUS_RATE;
       document.getElementById("bonus").textContent = formatCurrency(bonus);
 
       document.getElementById("loading").style.display = "none";
