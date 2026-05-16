@@ -44,24 +44,6 @@
       font-size: clamp(28px, 4.5vw, 44px); line-height: 1.1; margin-bottom: 24px;
     }
 
-    .period-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-    .period-select {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 9px 14px;
-      font-size: 13px;
-      font-family: var(--font-body);
-      cursor: pointer;
-      min-width: 160px;
-      appearance: none;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23F0EDE8' stroke-width='1.5' fill='none' stroke-linecap='round'/></svg>");
-      background-repeat: no-repeat;
-      background-position: right 12px center;
-      padding-right: 32px;
-    }
-    .period-select:focus { outline: none; border-color: var(--accent); }
     .period-label { font-size: 13px; color: var(--muted); }
 
     .loading, .error {
@@ -135,22 +117,7 @@
       margin-bottom: 10px;
     }
 
-    /* % change badge */
-    .change {
-      display: inline-flex; align-items: center; gap: 4px;
-      font-family: var(--font-head); font-size: 12px; font-weight: 600;
-      padding: 4px 9px; border-radius: 6px;
-    }
-    .change.up      { background: rgba(0,255,106,0.13);  color: var(--accent); }
-    .change.down    { background: rgba(255,85,85,0.14);  color: var(--red); }
-    .change.neutral { background: rgba(255,255,255,0.06); color: var(--muted); }
-    .change-caret { font-size: 11px; line-height: 1; }
-    .change-vs {
-      margin-left: 8px; font-size: 11px; color: var(--dim);
-      font-family: var(--font-head); letter-spacing: 0.05em;
-    }
-
-    /* Bonus card (now smaller, secondary in visual weight) */
+    /* Bonus card (smaller, secondary in visual weight) */
     .bonus-card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -194,17 +161,7 @@
   <div class="hero">
     <div class="eyebrow">Anvy Tech</div>
     <h1>Performance Snapshot</h1>
-    <div class="period-row">
-      <select class="period-select" id="period-select">
-        <option value="this_month" selected>Month to date</option>
-        <option value="last_7d">Last 7 days</option>
-        <option value="last_14d">Last 14 days</option>
-        <option value="last_30d">Last 30 days</option>
-        <option value="last_90d">Last 90 days</option>
-        <option value="last_month">Last month</option>
-      </select>
-      <span class="period-label" id="period-label"></span>
-    </div>
+    <div class="period-label" id="period-label"></div>
   </div>
 
   <div id="loading" class="loading">Loading live performance data…</div>
@@ -215,18 +172,10 @@
       <div class="primary-card">
         <div class="primary-label">Revenue</div>
         <div class="primary-value" id="revenue">—</div>
-        <div>
-          <span id="revenue-change"></span>
-          <span class="change-vs" id="revenue-vs"></span>
-        </div>
       </div>
       <div class="primary-card">
         <div class="primary-label">ROAS</div>
         <div class="primary-value" id="roas">—</div>
-        <div>
-          <span id="roas-change"></span>
-          <span class="change-vs" id="roas-vs"></span>
-        </div>
       </div>
     </div>
 
@@ -234,10 +183,6 @@
       <div class="secondary-card">
         <div class="secondary-label">Ad Spend</div>
         <div class="secondary-value" id="spend">—</div>
-        <div>
-          <span id="spend-change"></span>
-          <span class="change-vs" id="spend-vs"></span>
-        </div>
       </div>
     </div>
 
@@ -270,58 +215,9 @@
   const monthName = d => d.toLocaleDateString("en-CA", { month: "long",  year: "numeric" });
   const fmtDate   = d => d.toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" });
 
-  function periodToDates(period) {
-    const today = new Date();
-    if (period === "this_month") {
-      return { since: ymd(new Date(today.getFullYear(), today.getMonth(), 1)), until: ymd(today) };
-    }
-    if (period === "last_month") {
-      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const end   = new Date(today.getFullYear(), today.getMonth(),     0); // last day of prev month
-      return { since: ymd(start), until: ymd(end) };
-    }
-    const days  = { last_7d: 7, last_14d: 14, last_30d: 30, last_90d: 90 }[period] || 30;
-    const since = new Date(today); since.setDate(today.getDate() - (days - 1));
-    return { since: ymd(since), until: ymd(today) };
-  }
-
-  function comparisonDates(period) {
-    const today = new Date();
-    if (period === "this_month") {
-      // Previous month, same number of days into it as today
-      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-      const daysInto   = Math.round((today - monthStart) / 86400000) + 1;
-      const prevStart  = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const prevEnd    = new Date(today.getFullYear(), today.getMonth() - 1, daysInto);
-      return { since: ymd(prevStart), until: ymd(prevEnd) };
-    }
-    if (period === "last_month") {
-      // Month before last month
-      const start = new Date(today.getFullYear(), today.getMonth() - 2, 1);
-      const end   = new Date(today.getFullYear(), today.getMonth() - 1, 0);
-      return { since: ymd(start), until: ymd(end) };
-    }
-    const days  = { last_7d: 7, last_14d: 14, last_30d: 30, last_90d: 90 }[period] || 30;
-    const untilDate = new Date(today); untilDate.setDate(today.getDate() - days);
-    const sinceDate = new Date(untilDate); sinceDate.setDate(untilDate.getDate() - (days - 1));
-    return { since: ymd(sinceDate), until: ymd(untilDate) };
-  }
-
   function monthToDateRange() {
     const today = new Date();
     return { since: ymd(new Date(today.getFullYear(), today.getMonth(), 1)), until: ymd(today) };
-  }
-
-  function periodVsLabel(period) {
-    switch (period) {
-      case "this_month": return "vs same days last month";
-      case "last_month": return "vs month before";
-      case "last_7d":    return "vs prior 7 days";
-      case "last_14d":   return "vs prior 14 days";
-      case "last_30d":   return "vs prior 30 days";
-      case "last_90d":   return "vs prior 90 days";
-      default:           return "vs prior period";
-    }
   }
 
   /* ── API + extractors ───────────────────────────────────── */
@@ -368,33 +264,6 @@
   }
   function formatRoas(val) { return `${(val || 0).toFixed(2)}×`; }
 
-  function pctChange(curr, prev) {
-    if (prev == null || prev === 0) return null;
-    return ((curr - prev) / Math.abs(prev)) * 100;
-  }
-
-  function renderChange(elId, curr, prev, opts = {}) {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    const pct = pctChange(curr, prev);
-    if (pct == null) {
-      el.outerHTML = `<span id="${elId}" class="change neutral">—</span>`;
-      return;
-    }
-    const isPos    = pct >= 0;
-    const goodIsUp = opts.goodIsUp !== false; // default: up is good
-    const useColor = opts.color !== false;
-    let cls = "neutral";
-    if (useColor) {
-      cls = (isPos === goodIsUp) ? "up" : "down";
-    }
-    const arrow  = isPos ? "↑" : "↓";
-    const sign   = isPos ? "+" : "";
-    el.outerHTML = `<span id="${elId}" class="change ${cls}">
-      <span class="change-caret">${arrow}</span>${sign}${pct.toFixed(1)}%
-    </span>`;
-  }
-
   function showError(msg) {
     document.getElementById("loading").style.display = "none";
     const e = document.getElementById("error");
@@ -403,55 +272,29 @@
   }
 
   /* ── orchestration ──────────────────────────────────────── */
-  async function load(period) {
-    document.getElementById("loading").style.display = "block";
-    document.getElementById("error").style.display   = "none";
-    document.getElementById("content").style.display = "none";
-
+  async function load() {
     try {
-      const cur  = periodToDates(period);
-      const prev = comparisonDates(period);
-      const mtd  = monthToDateRange();
+      const mtd = monthToDateRange();
 
-      // Set period label immediately
-      const sinceFmt = fmtDate(new Date(cur.since + "T00:00:00"));
-      const untilFmt = fmtDate(new Date(cur.until + "T00:00:00"));
+      // Period label + bonus month
+      const sinceFmt = fmtDate(new Date(mtd.since + "T00:00:00"));
+      const untilFmt = fmtDate(new Date(mtd.until + "T00:00:00"));
       document.getElementById("period-label").textContent = `${sinceFmt} – ${untilFmt}`;
-      document.getElementById("bonus-month").textContent = `(${monthName(new Date())})`;
+      document.getElementById("bonus-month").textContent  = `(${monthName(new Date())})`;
 
-      // If selected period equals month-to-date, reuse current data for bonus (save a call)
-      const sameAsMTD = (cur.since === mtd.since && cur.until === mtd.until);
-
-      const calls = [
+      const [acctInfo, mtdRow] = await Promise.all([
         api(AD_ACCOUNT_ID, { fields: "currency" }),
-        fetchInsights(cur),
-        fetchInsights(prev),
-      ];
-      if (!sameAsMTD) calls.push(fetchInsights(mtd));
-
-      const [acctInfo, curRow, prevRow, mtdRow] = await Promise.all(calls);
+        fetchInsights(mtd)
+      ]);
       currency = acctInfo.currency || "CAD";
 
-      const c = metricsFromRow(curRow);
-      const p = metricsFromRow(prevRow);
-      const m = sameAsMTD ? c : metricsFromRow(mtdRow);
+      const m = metricsFromRow(mtdRow);
 
-      // Primary cards
-      document.getElementById("revenue").textContent = formatCurrency(c.revenue);
-      document.getElementById("spend").textContent   = formatCurrency(c.spend);
-      document.getElementById("roas").textContent    = formatRoas(c.roas);
+      document.getElementById("revenue").textContent = formatCurrency(m.revenue);
+      document.getElementById("spend").textContent   = formatCurrency(m.spend);
+      document.getElementById("roas").textContent    = formatRoas(m.roas);
 
-      // % change badges
-      renderChange("revenue-change", c.revenue, p.revenue);
-      renderChange("roas-change",    c.roas,    p.roas);
-      renderChange("spend-change",   c.spend,   p.spend, { color: false }); // spend change shown without good/bad colour
-
-      const vsLabel = periodVsLabel(period);
-      document.getElementById("revenue-vs").textContent = vsLabel;
-      document.getElementById("roas-vs").textContent    = vsLabel;
-      document.getElementById("spend-vs").textContent   = vsLabel;
-
-      // Bonus (always MTD)
+      // Bonus
       const breakevenRev = m.spend * BREAKEVEN_ROAS;
       const grossProfit  = m.revenue - breakevenRev;
       const bonus        = Math.max(0, grossProfit) * BONUS_RATE;
@@ -464,8 +307,7 @@
     }
   }
 
-  document.getElementById("period-select").addEventListener("change", e => load(e.target.value));
-  load(document.getElementById("period-select").value);
+  load();
 })();
 </script>
 </body>
