@@ -565,6 +565,9 @@ async function fetchAdThumbnails(adAccountId) {
     }
     const resolved = Object.values(map).filter(a => a.thumbnailUrl).length;
     console.log(`Thumbnails: ${resolved} of ${Object.keys(map).length} ads have a thumbnail URL`);
+    // Log a sample of URLs so we can inspect why the browser may be refusing to render them
+    const sampleUrls = Object.values(map).map(a => a.thumbnailUrl).filter(Boolean).slice(0, 3);
+    if (sampleUrls.length) console.log("Sample thumbnail URLs:", sampleUrls);
     return map;
   } catch (e) {
     console.error("Thumbnail fetch failed (non-fatal):", e.message, e);
@@ -630,18 +633,20 @@ function renderAdTable(rows, currency) {
           </svg>
         </div>`;
 
+        // onerror: log the URL once (so we can see why Meta's CDN is rejecting it),
+        // then swap to the placeholder icon so the cell still has a thumb-sized slot
+        const onerr = `if(!this.dataset.logged){this.dataset.logged=1;console.warn('Thumb load failed:',this.src);}this.replaceWith(Object.assign(document.createElement('div'),{className:'ad-thumb-placeholder',innerHTML:'<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><polyline points=\\'21 15 16 10 5 21\\'/></svg>'}))`;
+
         let thumbEl;
         if (row.thumbnailUrl) {
           if (row.isVideo) {
-            // Video: wrap in badge div so the ::after play overlay applies
             thumbEl = `<div class="ad-thumb-video-badge">
               <img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy" referrerpolicy="no-referrer"
-                   onerror="this.closest('.ad-thumb-video-badge').style.display='none'">
+                   onerror="${onerr}">
             </div>`;
           } else {
-            // Image ad: plain img, hide on error
             thumbEl = `<img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy" referrerpolicy="no-referrer"
-                            onerror="this.style.display='none'">`;
+                            onerror="${onerr}">`;
           }
         } else {
           thumbEl = placeholder;
