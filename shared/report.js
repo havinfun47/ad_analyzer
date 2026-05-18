@@ -454,6 +454,7 @@ async function fetchAdThumbnails(adAccountId) {
 
     let all = [];
     let next = null;
+    let pageCount = 0;
     do {
       let data;
       if (next) {
@@ -468,7 +469,10 @@ async function fetchAdThumbnails(adAccountId) {
       }
       if (data.data) all = all.concat(data.data);
       next = data.paging?.next || null;
+      pageCount++;
+      if (pageCount > 40) { console.warn("Thumbnail fetch: aborting at 40 pages"); break; } // safety
     } while (next);
+    console.log(`Thumbnails: fetched ${all.length} ads across ${pageCount} page(s) for ${adAccountId}`);
 
     // Pass 1: extract whatever URL we can immediately, collect unresolved hashes / story-ids / video-ids
     const map = {};
@@ -559,9 +563,11 @@ async function fetchAdThumbnails(adAccountId) {
       ad.storyId = ad._storyId || null;
       delete ad._hash; delete ad._videoId; delete ad._storyId;
     }
+    const resolved = Object.values(map).filter(a => a.thumbnailUrl).length;
+    console.log(`Thumbnails: ${resolved} of ${Object.keys(map).length} ads have a thumbnail URL`);
     return map;
   } catch (e) {
-    console.warn("Thumbnail fetch failed (non-fatal):", e.message);
+    console.error("Thumbnail fetch failed (non-fatal):", e.message, e);
     return {};
   }
 }
