@@ -1250,3 +1250,73 @@ input[type="date"]:focus { border-color: var(--accent); }
   outline: none;
   border-color: var(--accent);
 }
+
+/* ── Performance Summary tab ──────────────────────────────── */
+.summary-table thead th { font-size: 11px; }
+
+.hit-rate-block {
+  margin-top: 28px;
+  display: flex;
+  justify-content: center;
+}
+.hit-rate-card {
+  background: linear-gradient(135deg, rgba(0,255,106,0.06) 0%, var(--bg-surface) 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 36px;
+  width: 100%;
+  max-width: 520px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.hit-rate-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+.hit-rate-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.hit-rate-label {
+  font-family: var(--font-head);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.hit-rate-period {
+  font-family: var(--font-head);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.hit-rate-value {
+  font-family: var(--font-head);
+  font-size: clamp(44px, 7vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 14px;
+}
+.hit-rate-meta {
+  font-family: var(--font-head);
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.hit-rate-meta strong { color: var(--accent); font-weight: 700; }
+.hit-rate-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}

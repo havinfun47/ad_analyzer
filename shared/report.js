@@ -1420,6 +1420,14 @@ function injectTrendsUI() {
         <line x1="9" y1="9" x2="9" y2="21"/>
       </svg>
       Analysis
+    </button>
+    <button class="tab-btn" data-tab="summary">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <line x1="4" y1="6" x2="20" y2="6"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="18" x2="14" y2="18"/>
+      </svg>
+      Summary
     </button>`;
   rc.before(tabBar);
 
@@ -1459,12 +1467,26 @@ function injectTrendsUI() {
     </div>
     <div id="analysis-table-wrap"></div>`;
   trendsDiv.after(analysisDiv);
+
+  // Summary content (after analysis, inside <main>)
+  const summaryDiv         = document.createElement("div");
+  summaryDiv.id            = "summary-content";
+  summaryDiv.className     = "no-print";
+  summaryDiv.style.display = "none";
+  summaryDiv.innerHTML     = `
+    <div class="trends-header">
+      <div class="trends-title-row">
+        <div class="section-label">Performance Summary</div>
+      </div>
+    </div>
+    <div id="summary-wrap"></div>`;
+  analysisDiv.after(summaryDiv);
 }
 
 /* ── Tab + toggle event handling ──────────────────────────── */
 function initTabs() {
   document.addEventListener("click", e => {
-    // Main tabs (Report / Trends / Analysis)
+    // Main tabs (Report / Trends / Analysis / Summary)
     const tabBtn = e.target.closest(".tab-btn[data-tab]");
     if (tabBtn) {
       const tab = tabBtn.dataset.tab;
@@ -1476,9 +1498,12 @@ function initTabs() {
       if (tc) tc.style.display = tab === "trends" ? "" : "none";
       const ac = document.getElementById("analysis-content");
       if (ac) ac.style.display = tab === "analysis" ? "" : "none";
+      const sc = document.getElementById("summary-content");
+      if (sc) sc.style.display = tab === "summary" ? "" : "none";
 
       if (tab === "trends"   && !_trendsCache[_trendsMode])     loadTrends(_trendsMode);
       if (tab === "analysis" && !_analysisCache[_analysisMode]) loadAnalysis(_analysisMode);
+      if (tab === "summary"  && !_summaryCache)                  loadSummary();
       return;
     }
 
@@ -2133,6 +2158,194 @@ function renderAnalysisFromCache() {
       const v = parseFloat(e.target.value);
       if (!isNaN(v) && v >= 0) setTargetRoas(v);
     });
+  }
+}
+
+/* =========================================================
+   Summary Tab
+   ========================================================= */
+
+let _summaryCache = null; // null = needs fetch
+
+// Hit-rate target ROAS by client (separate from Analysis tab's editable targets)
+const HIT_RATE_TARGET_ROAS = { root: 2.8, toothpod: 1.0, mycosoul: 1.0 };
+
+function getSummaryPeriods() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const mk = (label, daysBack) => {
+    const d = new Date(today); d.setDate(today.getDate() - daysBack);
+    return { label, since: formatDate(d), until: formatDate(today) };
+  };
+  const mtdStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  return [
+    mk("Last 7d",  6),
+    mk("Last 14d", 13),
+    mk("Last 30d", 29),
+    mk("Last 90d", 89),
+    { label: "MTD", since: formatDate(mtdStart), until: formatDate(today) }
+  ];
+}
+
+async function fetchSummaryData() {
+  const adAccountId = currentClient.adAccountId;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const since = new Date(today); since.setDate(today.getDate() - 89);
+
+  const dailyFields = [
+    "spend", "impressions", "reach", "cpm", "frequency",
+    "actions", "action_values", "cost_per_action_type",
+    "outbound_clicks", "inline_link_clicks",
+    "cost_per_inline_link_click", "inline_link_click_ctr",
+    "purchase_roas",
+    "date_start", "date_stop"
+  ].join(",");
+
+  const adFields = "ad_id,spend,actions,action_values,purchase_roas,date_start,date_stop";
+
+  const [dailyRes, adRes] = await Promise.all([
+    apiGet(`${adAccountId}/insights`, {
+      fields: dailyFields,
+      time_range: JSON.stringify({ since: formatDate(since), until: formatDate(today) }),
+      time_increment: 1,
+      level: "account",
+      limit: 100
+    }),
+    apiGet(`${adAccountId}/insights`, {
+      fields: adFields,
+      time_range: JSON.stringify({ since: formatDate(since), until: formatDate(today) }),
+      level: "ad",
+      limit: 500
+    })
+  ]);
+
+  return { dailyRows: dailyRes.data || [], adRows: adRes.data || [] };
+}
+
+function summaryMetricsForPeriod(dailyRows, period) {
+  const matching = dailyRows.filter(r => r.date_start >= period.since && r.date_start <= period.until);
+  if (!matching.length) return null;
+  const agg = aggregateRows(matching);
+
+  const spend       = parseFloat(agg.spend || 0);
+  const impressions = parseFloat(agg.impressions || 0);
+  const reach       = parseFloat(agg.reach || 0);
+  const cpm         = parseFloat(agg.cpm || 0);
+  const ctr         = parseFloat(agg.inline_link_click_ctr || 0);
+
+  const purchase    = getPurchaseAction(agg);
+  const purchases   = purchase ? parseFloat(purchase.value || 0) : 0;
+  const revenue     = getActionValue(agg, PURCHASE_ACTION) || getActionValue(agg, "omni_purchase");
+  const roas        = parseRoas(agg) ?? (spend > 0 ? revenue / spend : 0);
+
+  const outClicks   = getOutboundClicks(agg);
+  const cr          = outClicks > 0 ? (purchases / outClicks) * 100 : 0;
+  const cpmr        = reach > 0 ? (spend / reach) * 1000 : 0;
+
+  return { revenue, roas, spend, cr, ctr, cpm, cpmr };
+}
+
+function computeHitRate(adRows, targetRoas) {
+  // Aggregate per ad_id (Meta may return multiple rows per ad in some breakdown configs)
+  const byAd = {};
+  for (const r of adRows) {
+    const id = r.ad_id;
+    if (!id) continue;
+    if (!byAd[id]) byAd[id] = { spend: 0, purchases: 0, revenue: 0 };
+    byAd[id].spend     += parseFloat(r.spend || 0);
+    byAd[id].purchases += getAction(r, PURCHASE_ACTION) || getAction(r, "omni_purchase");
+    byAd[id].revenue   += getActionValue(r, PURCHASE_ACTION) || getActionValue(r, "omni_purchase");
+  }
+
+  let qualified = 0, total = 0;
+  for (const ad of Object.values(byAd)) {
+    if (ad.spend <= 0) continue;
+    total++;
+    // "spent at least 3x cost per purchase" === purchases >= 3 (since CPP = spend / purchases)
+    const roas = ad.spend > 0 ? ad.revenue / ad.spend : 0;
+    if (ad.purchases >= 3 && roas >= targetRoas) qualified++;
+  }
+  return { qualified, total, rate: total > 0 ? qualified / total : 0 };
+}
+
+function renderSummary(dailyRows, adRows) {
+  const c = currentClient.currency || "CAD";
+  const periods = getSummaryPeriods();
+  const metricsByPeriod = periods.map(p => ({ period: p, metrics: summaryMetricsForPeriod(dailyRows, p) }));
+
+  const metricRows = [
+    { label: "Revenue",          key: "revenue", fmt: v => formatCurrency(v, c), direction: "higher" },
+    { label: "ROAS",             key: "roas",    fmt: v => formatRoas(v),         direction: "higher" },
+    { label: "Ad Spend",         key: "spend",   fmt: v => formatCurrency(v, c), direction: "neutral" },
+    { label: "Conversion Rate",  key: "cr",      fmt: v => formatPct(v),          direction: "higher" },
+    { label: "CTR",              key: "ctr",     fmt: v => formatPct(v),          direction: "higher" },
+    { label: "CPM",              key: "cpm",     fmt: v => formatCurrency(v, c), direction: "lower"  },
+    { label: "CPMr",             key: "cpmr",    fmt: v => formatCurrency(v, c), direction: "lower"  }
+  ];
+
+  const headerCells = metricsByPeriod.map(p => `<th class="th-num">${p.period.label}</th>`).join("");
+
+  const bodyRows = metricRows.map(m => {
+    const vals = metricsByPeriod.map(p => p.metrics ? p.metrics[m.key] : null);
+    const finite = vals.filter(v => v != null && isFinite(v));
+    let mn = null, mx = null;
+    if (m.direction !== "neutral" && finite.length >= 2) {
+      mn = Math.min(...finite); mx = Math.max(...finite);
+    }
+    const cells = metricsByPeriod.map((p, i) => {
+      const v = vals[i];
+      const bg = (m.direction === "higher" || m.direction === "lower")
+        ? analysisCellBg(v, mn, mx, m.direction === "lower")
+        : "";
+      const txt = (v == null || (typeof v === "number" && !isFinite(v))) ? "—" : m.fmt(v);
+      return `<td class="td-num"${bg ? ` style="${bg}"` : ""}>${txt}</td>`;
+    }).join("");
+    return `<tr><td class="td-name">${m.label}</td>${cells}</tr>`;
+  }).join("");
+
+  const targetRoas = HIT_RATE_TARGET_ROAS[currentClient.key] ?? 1.0;
+  const hit = computeHitRate(adRows, targetRoas);
+  const ratePct = (hit.rate * 100).toFixed(1);
+
+  return `
+    <div class="table-wrapper">
+      <div class="table-scroll">
+        <table class="data-table analysis-table summary-table">
+          <thead><tr><th class="th-name">Metric</th>${headerCells}</tr></thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="hit-rate-block">
+      <div class="hit-rate-card">
+        <div class="hit-rate-header">
+          <span class="hit-rate-label">Hit Rate</span>
+          <span class="hit-rate-period">Last 90 days · Target ROAS ${targetRoas.toFixed(1)}</span>
+        </div>
+        <div class="hit-rate-value">${ratePct}%</div>
+        <div class="hit-rate-meta"><strong>${hit.qualified}</strong> of <strong>${hit.total}</strong> ads passed</div>
+        <div class="hit-rate-sub">Pass = at least 3 purchases AND ROAS ≥ ${targetRoas.toFixed(1)}</div>
+      </div>
+    </div>`;
+}
+
+async function loadSummary() {
+  const wrap = document.getElementById("summary-wrap");
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="table-wrapper">
+    <div class="skeleton skeleton-table" style="height:300px;border-radius:0;"></div>
+  </div>`;
+  try {
+    const { dailyRows, adRows } = await fetchSummaryData();
+    _summaryCache = { dailyRows, adRows };
+    wrap.innerHTML = renderSummary(dailyRows, adRows);
+  } catch (err) {
+    console.error("Summary fetch failed:", err);
+    wrap.innerHTML = `<div class="table-wrapper" style="padding:32px;text-align:center;">
+      <p style="color:var(--red);font-size:13px;">${err.message}</p>
+    </div>`;
   }
 }
 
