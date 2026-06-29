@@ -17,7 +17,7 @@ const CLIENTS = {
   },
   mycosoul: {
     name: "myco:soul",
-    adAccountId: "act_521928957251738",
+    adAccountId: "act_960098757016558",
     currency: "CAD",
     logo: null
   }
