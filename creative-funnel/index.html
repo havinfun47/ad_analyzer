@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Creative Funnel — Scale Science</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../shared/styles.css" />
+  <style>
+    body.cf-page { padding-bottom: 80px; }
+
+    .cf-toolbar {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 20px 40px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 60px; z-index: 50;
+    }
+    .cf-toolbar .cf-spacer { flex: 1; }
+    .cf-toolbar label {
+      font-family: var(--font-head); font-size: 10px; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted);
+    }
+    .cf-toolbar .cf-input {
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      color: var(--text); padding: 7px 10px; border-radius: 6px;
+      font-size: 12px; font-family: var(--font-body); min-width: 90px;
+    }
+    .cf-toolbar .cf-input:focus { outline: none; border-color: var(--accent); }
+    .cf-last-updated { font-size: 11px; color: var(--text-muted); }
+
+    .cf-page-title {
+      font-family: var(--font-head); font-size: 28px; font-weight: 800;
+      letter-spacing: -0.02em; margin: 28px 40px 8px;
+    }
+    .cf-page-sub {
+      margin: 0 40px 20px; font-size: 13px; color: var(--text-muted);
+    }
+
+    /* Funnel stages */
+    .cf-stage {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 40px;
+      padding: 32px 40px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .cf-stage:first-of-type { border-top: 0; }
+
+    .cf-stage-info { padding-top: 12px; }
+    .cf-stage-label {
+      font-family: var(--font-head);
+      font-size: clamp(24px, 2.4vw, 32px);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1.1;
+      margin-bottom: 20px;
+    }
+    .cf-stat {
+      display: block;
+      font-family: var(--font-body);
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .cf-stat strong { color: var(--text); font-weight: 600; }
+
+    .cf-stage-scroll {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 8px;
+      scroll-snap-type: x proximity;
+    }
+    .cf-stage-scroll::-webkit-scrollbar { height: 8px; }
+    .cf-stage-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .cf-ad-card {
+      flex: 0 0 auto;
+      width: 340px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      scroll-snap-align: start;
+      display: flex; flex-direction: column;
+    }
+
+    .cf-preview {
+      position: relative;
+      width: 100%;
+      min-height: 820px;
+      background: #fff;
+      overflow: hidden;
+      display: flex; align-items: flex-start; justify-content: center;
+    }
+    .cf-preview.loaded { min-height: 0; }
+    .cf-preview iframe {
+      border: 0 !important;
+      max-width: 100% !important;
+      display: block;
+    }
+    .cf-preview-loading {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px;
+      width: 100%; min-height: 820px;
+      background: #181818;
+      color: var(--text-muted); font-size: 12px;
+    }
+    .cf-spinner {
+      width: 22px; height: 22px;
+      border: 2px solid #333;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: cf-spin 0.7s linear infinite;
+    }
+    @keyframes cf-spin { to { transform: rotate(360deg); } }
+
+    .cf-ad-foot {
+      padding: 10px 14px;
+      display: flex; justify-content: space-between; gap: 10px;
+      font-family: var(--font-head);
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.03em;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border-subtle);
+    }
+    .cf-ad-foot strong { color: var(--text); font-weight: 700; }
+
+    .cf-loading, .cf-empty, .cf-error {
+      padding: 80px 40px; text-align: center; color: var(--text-muted);
+      font-size: 14px;
+    }
+    .cf-error { color: #FF6B6B; }
+
+    .cf-skeleton {
+      height: 900px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+      margin: 20px 40px;
+    }
+    .cf-skeleton::after {
+      content: ""; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+      animation: cf-shimmer 1.6s infinite;
+    }
+    @keyframes cf-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+    @media (max-width: 900px) {
+      .cf-stage { grid-template-columns: 1fr; gap: 16px; padding: 24px 20px; }
+      .cf-toolbar, .cf-page-title, .cf-page-sub { padding-left: 20px; padding-right: 20px; }
+      .cf-page-title { margin-left: 20px; margin-right: 20px; }
+      .cf-page-sub   { margin-left: 20px; margin-right: 20px; }
+    }
+  </style>
+</head>
+<body class="cf-page">
+
+<!-- ── Token Screen ─────────────────────────────────────────── -->
+<div id="token-screen">
+  <div class="token-card">
+    <svg class="token-logo" viewBox="0 0 200 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="32" font-family="'Space Grotesk', sans-serif" font-size="32" font-weight="800" fill="#F0EDE8">Scale</text>
+      <rect x="112" y="0" width="88" height="40" rx="4" fill="#F0EDE8"/>
+      <text x="120" y="28" font-family="'Space Grotesk', sans-serif" font-size="24" font-weight="800" fill="#0A0A0A">Sci</text>
+    </svg>
+    <h2>Connect Meta Ads</h2>
+    <p>Paste your Meta User Access Token below to load the Creative Funnel. Your token is stored locally and never sent to any server.</p>
+    <label for="token-input">Meta User Access Token</label>
+    <textarea id="token-input" class="token-input" placeholder="EAAhmSeA3md..."></textarea>
+    <button id="token-submit" class="btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      Connect &amp; Load
+    </button>
+  </div>
+</div>
+
+<!-- ── Navigation ───────────────────────────────────────────── -->
+<nav id="nav">
+  <svg class="nav-logo" viewBox="0 0 200 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <text x="0" y="28" font-family="'Space Grotesk', sans-serif" font-size="28" font-weight="800" fill="#F0EDE8">Scale</text>
+    <rect x="102" y="0" width="76" height="36" rx="3" fill="#F0EDE8"/>
+    <text x="109" y="25" font-family="'Space Grotesk', sans-serif" font-size="21" font-weight="800" fill="#0A0A0A">Sci</text>
+  </svg>
+  <span class="nav-client">Creative Funnel</span>
+  <div class="nav-right no-print">
+    <button class="btn-ghost" id="btn-disconnect">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      Disconnect
+    </button>
+  </div>
+</nav>
+
+<!-- ── Toolbar (client + date + min spend + refresh) ───────── -->
+<div class="cf-toolbar">
+  <div class="date-select-wrapper">
+    <select class="date-select" id="client-select">
+      <option value="anvytech">Anvy Tech</option>
+      <option value="toothpod">Toothpod</option>
+    </select>
+  </div>
+  <div class="date-select-wrapper">
+    <select class="date-select" id="range-select">
+      <option value="last_7d">Last 7 days</option>
+      <option value="last_14d">Last 14 days</option>
+      <option value="last_30d" selected>Last 30 days</option>
+      <option value="last_90d">Last 90 days</option>
+      <option value="this_month">Month to date</option>
+    </select>
+  </div>
+  <label>Min spend</label>
+  <input type="number" class="cf-input" id="min-spend" value="100" min="0" step="25" style="max-width:100px" />
+  <button class="btn-ghost" id="btn-refresh">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 11-3-6.7M21 3v6h-6"/></svg>
+    Refresh
+  </button>
+  <span class="cf-spacer"></span>
+  <span class="cf-last-updated" id="last-updated">Loading…</span>
+</div>
+
+<!-- ── Page title ───────────────────────────────────────────── -->
+<h1 class="cf-page-title" id="page-title">Creative Funnel</h1>
+<p class="cf-page-sub" id="page-sub"></p>
+
+<!-- ── Loading / Empty / Error / Content ────────────────────── -->
+<div id="cf-loading" style="display:none">
+  <div class="cf-skeleton"></div>
+  <div class="cf-skeleton"></div>
+  <div class="cf-skeleton"></div>
+</div>
+
+<div id="cf-empty" class="cf-empty" style="display:none">
+  No ads met the minimum spend threshold in this period. Try lowering the min spend or widening the date range.
+</div>
+
+<div id="cf-error" class="cf-error" style="display:none">
+  <p id="cf-error-message">Failed to load.</p>
+  <button class="btn-primary" id="btn-retry" style="margin-top:16px">Retry</button>
+</div>
+
+<div id="cf-stages"></div>
+
+<script src="funnel.js"></script>
+</body>
+</html>

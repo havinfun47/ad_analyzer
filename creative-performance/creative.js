@@ -13,8 +13,7 @@ const OMNI_PURCHASE   = "omni_purchase";
 
 const CLIENTS = {
   anvytech: { name: "Anvy Tech", adAccountId: "act_575199276244807" },
-  toothpod: { name: "Toothpod",  adAccountId: "act_727374130071249" },
-  mycosoul: { name: "myco:soul", adAccountId: "act_960098757016558" }
+  toothpod: { name: "Toothpod",  adAccountId: "act_727374130071249" }
 };
 
 /* ── State ─────────────────────────────────────────────────── */
