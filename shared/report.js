@@ -1730,7 +1730,7 @@ function renderTrendsFromCache() {
 let _analysisMode  = "monthly";
 let _analysisCache = {}; // { quarterly: cols, monthly: cols, weekly: cols }
 
-const TARGET_ROAS_DEFAULTS = { root: 2.9, toothpod: 1.0 };
+const TARGET_ROAS_DEFAULTS = { root: 2.9, toothpod: 1.0, naturebee: 2.5 };
 
 function getTargetRoas() {
   const key = `analysis_target_roas::${currentClient?.key || "default"}`;
@@ -2168,7 +2168,7 @@ function renderAnalysisFromCache() {
 let _summaryCache = null; // null = needs fetch
 
 // Hit-rate target ROAS by client (separate from Analysis tab's editable targets)
-const HIT_RATE_TARGET_ROAS = { root: 2.8, toothpod: 1.0 };
+const HIT_RATE_TARGET_ROAS = { root: 2.8, toothpod: 1.0, naturebee: 2.5 };
 
 function getSummaryPeriods() {
   const today = new Date();

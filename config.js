@@ -14,6 +14,12 @@ const CLIENTS = {
     adAccountId: "act_727374130071249",
     currency: "CAD",
     logo: null
+  },
+  naturebee: {
+    name: "NatureBee",
+    adAccountId: "act_666605770419715",
+    currency: "CAD",
+    logo: null
   }
 };
 

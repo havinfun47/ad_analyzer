@@ -18,7 +18,8 @@ const OMNI_PURCHASE   = "omni_purchase";
 
 const CLIENTS = {
   anvytech: { name: "Anvy Tech", adAccountId: "act_575199276244807" },
-  toothpod: { name: "Toothpod",  adAccountId: "act_727374130071249" }
+  toothpod: { name: "Toothpod",  adAccountId: "act_727374130071249" },
+  naturebee: { name: "NatureBee", adAccountId: "act_666605770419715" }
 };
 
 const STAGES = [
