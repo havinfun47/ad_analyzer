@@ -769,6 +769,13 @@ input[type="date"]:focus { border-color: var(--accent); }
   font-size: 13px;
 }
 
+.table-note {
+  padding: 10px 16px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
 /* ── Divider ──────────────────────────────────────────────── */
 .section-divider {
   height: 1px;
@@ -857,6 +864,8 @@ input[type="date"]:focus { border-color: var(--accent); }
 }
 
 .ad-name-text {
+  display: inline-block;
+  vertical-align: middle;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

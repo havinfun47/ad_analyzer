@@ -584,6 +584,8 @@ function buildAdRows(rows, thumbnails, currency) {
     const cartAdds    = getAction(r, CART_ACTION);
     const outClicks   = getOutboundClicks(r);
     const roas        = parseRoas(r);
+    const revenue     = getActionValue(r, PURCHASE_ACTION);
+    const ctr         = getOutboundCtr(r);      // uses full fallback chain
 
     // Use API cost_per_action_type first; fall back to manual spend / conversions
     const cpPurchase  = getCostPerAction(r, PURCHASE_ACTION)
@@ -607,7 +609,7 @@ function buildAdRows(rows, thumbnails, currency) {
       videoId:   thumb.videoId   || null,
       imageHash: thumb.imageHash || null,
       name:      r.ad_name || "—",
-      spend, purchases, roas,
+      spend, purchases, roas, revenue, ctr,
       cpPurchase, cpCheckout, cpCart, cpClick,
       cpm, frequency,
       thumbnailUrl: thumb.thumbnailUrl || null,
@@ -616,69 +618,83 @@ function buildAdRows(rows, thumbnails, currency) {
   });
 }
 
+// Ad Preview Performance shows only the top N ads by spend.
+const AD_TABLE_LIMIT = 15;
+
 function renderAdTable(rows, currency) {
   const c = currency || "CAD";
   const tableId = "tbl-ad";
-  const nullFmt = (fn) => v => v != null ? fn(v) : "—";
-  const cols = [
-    {
-      key: "name",
-      label: "Ad",
-      numeric: false,
-      render(val, row) {
-        const placeholder = `<div class="ad-thumb-placeholder">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-          </svg>
-        </div>`;
-
-        // onerror: log the URL once (so we can see why Meta's CDN is rejecting it),
-        // then swap to the placeholder icon so the cell still has a thumb-sized slot
-        const onerr = `if(!this.dataset.logged){this.dataset.logged=1;console.warn('Thumb load failed:',this.src);}this.replaceWith(Object.assign(document.createElement('div'),{className:'ad-thumb-placeholder',innerHTML:'<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><polyline points=\\'21 15 16 10 5 21\\'/></svg>'}))`;
-
-        let thumbEl;
-        if (row.thumbnailUrl) {
-          if (row.isVideo) {
-            thumbEl = `<div class="ad-thumb-video-badge">
-              <img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy" referrerpolicy="no-referrer"
-                   onerror="${onerr}">
-            </div>`;
-          } else {
-            thumbEl = `<img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy" referrerpolicy="no-referrer"
-                            onerror="${onerr}">`;
-          }
-        } else {
-          thumbEl = placeholder;
-        }
-
-        const adId = row.adId ? `data-ad-id="${row.adId}" data-ad-name="${val.replace(/"/g, '&quot;')}"` : "";
-        return `<div class="ad-thumb-cell ad-preview-trigger" ${adId} style="cursor:${row.adId ? 'pointer' : 'default'}">${thumbEl}<span class="ad-name-text">${val}</span></div>`;
-      }
-    },
-    { key: "spend",      label: "Amount Spent",        numeric: true, fmt: v => formatCurrency(v, c) },
-    { key: "purchases",  label: "Purchases",           numeric: true, fmt: v => formatNum(v, 0) },
-    { key: "roas",       label: "Purchase ROAS",       numeric: true, fmt: formatRoas },
-    { key: "cpPurchase", label: "Cost / Purchase",     numeric: true, fmt: nullFmt(v => formatCurrency(v, c)), lowerBetter: true },
-    { key: "cpCheckout", label: "Cost / Checkout",     numeric: true, fmt: nullFmt(v => formatCurrency(v, c)), lowerBetter: true },
-    { key: "cpCart",     label: "Cost / Add to Cart",  numeric: true, fmt: nullFmt(v => formatCurrency(v, c)), lowerBetter: true },
-    { key: "cpClick",    label: "Cost / Click",        numeric: true, fmt: nullFmt(v => formatCurrency(v, c)), lowerBetter: true },
-    { key: "cpm",        label: "CPM",                 numeric: true, fmt: v => formatCurrency(v, c), lowerBetter: true },
-    { key: "frequency",  label: "Frequency",           numeric: true, fmt: v => formatNum(v, 2) }
-  ];
 
   if (!rows.length) return `<div class="table-empty">No ad data for this period.</div>`;
 
-  const totals = {
-    spend:     rows.reduce((s, r) => s + r.spend, 0),
-    purchases: rows.reduce((s, r) => s + r.purchases, 0),
-    roas:      null,
-    cpPurchase: null, cpCheckout: null, cpCart: null, cpClick: null,
-    cpm:       rows.reduce((s, r) => s + r.cpm, 0) / (rows.length || 1),
-    frequency: rows.reduce((s, r) => s + r.frequency, 0) / (rows.length || 1)
+  // Default view: the top 15 highest-spending ads. Column sorting re-orders
+  // these 15 rather than pulling in ads from outside the top spenders.
+  const topRows = [...rows]
+    .sort((a, b) => b.spend - a.spend)
+    .slice(0, AD_TABLE_LIMIT);
+
+  const thumbCell = (row) => {
+    const placeholder = `<div class="ad-thumb-placeholder">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>
+    </div>`;
+
+    // onerror: log the URL once (so we can see why Meta's CDN is rejecting it),
+    // then swap to the placeholder icon so the cell still has a thumb-sized slot
+    const onerr = `if(!this.dataset.logged){this.dataset.logged=1;console.warn('Thumb load failed:',this.src);}this.replaceWith(Object.assign(document.createElement('div'),{className:'ad-thumb-placeholder',innerHTML:'<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><polyline points=\\'21 15 16 10 5 21\\'/></svg>'}))`;
+
+    if (!row.thumbnailUrl) return placeholder;
+    const img = `<img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy" referrerpolicy="no-referrer"
+                      onerror="${onerr}">`;
+    return row.isVideo ? `<div class="ad-thumb-video-badge">${img}</div>` : img;
   };
 
-  return renderSortableTable(tableId, cols, rows, totals, c);
+  const triggerAttrs = (row, name) => row.adId
+    ? `class="ad-preview-trigger" data-ad-id="${row.adId}" data-ad-name="${String(name).replace(/"/g, '&quot;')}" style="cursor:pointer"`
+    : "";
+
+  const cols = [
+    {
+      key: "name",
+      label: "Ad Name",
+      numeric: false,
+      render: (val, row) => `<span ${triggerAttrs(row, val)}><span class="ad-name-text">${val}</span></span>`
+    },
+    {
+      key: "preview",
+      label: "Ad Preview",
+      numeric: false,
+      sortable: false,
+      noTotal: true,
+      render: (val, row) => `<div class="ad-thumb-cell" ${triggerAttrs(row, row.name)}>${thumbCell(row)}</div>`
+    },
+    { key: "spend",     label: "Amount Spent",  numeric: true, fmt: v => formatCurrency(v, c) },
+    { key: "revenue",   label: "Revenue",       numeric: true, fmt: v => formatCurrency(v, c) },
+    { key: "roas",      label: "Purchase ROAS", numeric: true, fmt: formatRoas },
+    { key: "ctr",       label: "Outbound CTR",  numeric: true, fmt: formatPct },
+    { key: "cpm",       label: "CPM",           numeric: true, fmt: v => formatCurrency(v, c), lowerBetter: true },
+    { key: "frequency", label: "Frequency",     numeric: true, fmt: v => formatNum(v, 2) }
+  ];
+
+  // Totals describe the rows actually on screen, not the full ad set.
+  const totalSpend   = topRows.reduce((s, r) => s + r.spend, 0);
+  const totalRevenue = topRows.reduce((s, r) => s + r.revenue, 0);
+  const totals = {
+    spend:     totalSpend,
+    revenue:   totalRevenue,
+    roas:      totalSpend > 0 ? totalRevenue / totalSpend : 0,
+    ctr:       topRows.reduce((s, r) => s + r.ctr, 0) / (topRows.length || 1),
+    cpm:       topRows.reduce((s, r) => s + r.cpm, 0) / (topRows.length || 1),
+    frequency: topRows.reduce((s, r) => s + r.frequency, 0) / (topRows.length || 1)
+  };
+
+  const note = rows.length > topRows.length
+    ? `<div class="table-note">Showing the top ${topRows.length} ads by spend of ${rows.length} total.</div>`
+    : "";
+
+  return renderSortableTable(tableId, cols, topRows, totals, c) + note;
 }
 
 /* ── Generic Sortable Table ────────────────────────────────── */
@@ -696,6 +712,9 @@ function renderSortableTable(tableId, cols, rows, totals, currency) {
   }
 
   const headers = cols.map(col => {
+    if (col.sortable === false) {
+      return `<th class="${col.numeric ? "th-num" : ""}">${col.label}</th>`;
+    }
     const isSorted = state.col === col.key;
     const icon = isSorted ? (state.dir === 1 ? "↑" : "↓") : "↕";
     const cls = `${col.numeric ? "th-num" : ""} ${isSorted ? "sorted" : ""}`;
@@ -721,6 +740,7 @@ function renderSortableTable(tableId, cols, rows, totals, currency) {
     const fmt = col.fmt || (v => v);
     const cls = col.numeric ? "td-num" : "td-name";
     if (col.key === "name") return `<td class="${cls}">Totals</td>`;
+    if (col.noTotal) return `<td class="${cls}"></td>`;
     if (val == null) return `<td class="${cls} td-num">—</td>`;
     return `<td class="${cls}">${fmt(val)}</td>`;
   }).join("");
