@@ -813,63 +813,18 @@ input[type="date"]:focus { border-color: var(--accent); }
   border-radius: 2px;
 }
 
-/* ── Ad Thumbnail ─────────────────────────────────────────── */
-.ad-thumb-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ad-thumb {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 4px;
-  flex-shrink: 0;
-  background: var(--bg-elevated);
-  display: block;
-}
-
-.ad-thumb-placeholder {
-  width: 48px;
-  height: 48px;
-  border-radius: 4px;
-  flex-shrink: 0;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-dim);
-}
-
-.ad-thumb-video-badge {
-  position: relative;
-  display: inline-block;
-  line-height: 0;
-  flex-shrink: 0;
-}
-
-.ad-thumb-video-badge::after {
-  content: '▶';
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  color: #fff;
-  background: rgba(0,0,0,0.45);
-  border-radius: 4px;
-}
-
-.ad-name-text {
-  display: inline-block;
+/* ── Ad name cell ─────────────────────────────────────────── */
+/* Deliberately NOT named .ad-* : content blockers and privacy shields
+   hide elements with ad-ish class names, which blanked this column. */
+.creative-name {
   vertical-align: middle;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 200px;
+}
+
+/* The ad table has no thumbnail column, so give names more room than the
+   280px the campaign/ad set name cells use. The cell (not the span) does the
+   truncating so the ellipsis lands at the real column edge. */
+#tbl-ad .td-name {
+  max-width: 440px;
 }
 
 /* ── Scrollbar global ─────────────────────────────────────── */
@@ -1097,7 +1052,6 @@ input[type="date"]:focus { border-color: var(--accent); }
   .section-label::before { background: #00FF6A !important; }
 
   /* ── Thumbnail cells ───────────────────────────────────────── */
-  .ad-thumb { width: 36px !important; height: 36px !important; }
 }
 
 .print-header { display: none; }

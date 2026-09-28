@@ -621,6 +621,18 @@ function buildAdRows(rows, thumbnails, currency) {
 // Ad Preview Performance shows only the top N ads by spend.
 const AD_TABLE_LIMIT = 15;
 
+// Ad names come straight from Meta and can contain <, > or &. Interpolating
+// them raw lets a stray angle bracket swallow the rest of the row's markup,
+// which renders as an empty cell, so always escape before injecting.
+function escapeHtml(v) {
+  return String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function renderAdTable(rows, currency) {
   const c = currency || "CAD";
   const tableId = "tbl-ad";
@@ -633,42 +645,20 @@ function renderAdTable(rows, currency) {
     .sort((a, b) => b.spend - a.spend)
     .slice(0, AD_TABLE_LIMIT);
 
-  const thumbCell = (row) => {
-    const placeholder = `<div class="ad-thumb-placeholder">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-        <polyline points="21 15 16 10 5 21"/>
-      </svg>
-    </div>`;
-
-    // onerror: log the URL once (so we can see why Meta's CDN is rejecting it),
-    // then swap to the placeholder icon so the cell still has a thumb-sized slot
-    const onerr = `if(!this.dataset.logged){this.dataset.logged=1;console.warn('Thumb load failed:',this.src);}this.replaceWith(Object.assign(document.createElement('div'),{className:'ad-thumb-placeholder',innerHTML:'<svg width=\\'16\\' height=\\'16\\' viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\' stroke-width=\\'1.5\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><polyline points=\\'21 15 16 10 5 21\\'/></svg>'}))`;
-
-    if (!row.thumbnailUrl) return placeholder;
-    const img = `<img class="ad-thumb" src="${row.thumbnailUrl}" loading="lazy" referrerpolicy="no-referrer"
-                      onerror="${onerr}">`;
-    return row.isVideo ? `<div class="ad-thumb-video-badge">${img}</div>` : img;
-  };
-
-  const triggerAttrs = (row, name) => row.adId
-    ? `class="ad-preview-trigger" data-ad-id="${row.adId}" data-ad-name="${String(name).replace(/"/g, '&quot;')}" style="cursor:pointer"`
-    : "";
-
   const cols = [
     {
       key: "name",
       label: "Ad Name",
       numeric: false,
-      render: (val, row) => `<span ${triggerAttrs(row, val)}><span class="ad-name-text">${val}</span></span>`
-    },
-    {
-      key: "preview",
-      label: "Ad Preview",
-      numeric: false,
-      sortable: false,
-      noTotal: true,
-      render: (val, row) => `<div class="ad-thumb-cell" ${triggerAttrs(row, row.name)}>${thumbCell(row)}</div>`
+      render(val, row) {
+        // Never leave the cell empty: fall back to the ad id, then a dash.
+        const text = (val && String(val).trim()) || (row.adId ? `Ad ${row.adId}` : "—");
+        const safe = escapeHtml(text);
+        if (!row.adId) return `<span class="creative-name" title="${safe}">${safe}</span>`;
+        return `<span class="creative-name creative-preview-trigger" title="${safe}"
+                      data-ad-id="${escapeHtml(row.adId)}" data-ad-name="${safe}"
+                      style="cursor:pointer">${safe}</span>`;
+      }
     },
     { key: "spend",     label: "Amount Spent",  numeric: true, fmt: v => formatCurrency(v, c) },
     { key: "revenue",   label: "Revenue",       numeric: true, fmt: v => formatCurrency(v, c) },
@@ -1366,9 +1356,9 @@ function injectAdPreviewModal() {
     if (e.key === "Escape" && el.classList.contains("open")) closeAdPreview();
   });
 
-  // Event delegation for ad-preview-trigger clicks
+  // Event delegation for creative-preview-trigger clicks
   document.addEventListener("click", e => {
-    const trigger = e.target.closest(".ad-preview-trigger[data-ad-id]");
+    const trigger = e.target.closest(".creative-preview-trigger[data-ad-id]");
     if (trigger) openAdPreview(trigger.dataset.adId, trigger.dataset.adName);
   });
 }
