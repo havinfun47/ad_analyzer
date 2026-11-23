@@ -1753,6 +1753,38 @@ function setTargetRoas(value) {
   localStorage.setItem(key, String(value));
 }
 
+// Target CAC (cost per purchase, in the account's currency). Opt-in per client:
+// only clients listed here get the Analysis target-CAC row and a CAC-based Hit Rate.
+const TARGET_CAC_DEFAULTS = { lucillehealth: 60 };
+
+function hasTargetCac() {
+  return currentClient?.key in TARGET_CAC_DEFAULTS;
+}
+function getTargetCac() {
+  if (!hasTargetCac()) return null;
+  const key = `analysis_target_cac::${currentClient.key}`;
+  const stored = localStorage.getItem(key);
+  if (stored != null && !isNaN(parseFloat(stored))) return parseFloat(stored);
+  return TARGET_CAC_DEFAULTS[currentClient.key];
+}
+function setTargetCac(value) {
+  const key = `analysis_target_cac::${currentClient?.key || "default"}`;
+  localStorage.setItem(key, String(value));
+}
+
+// Show a ROAS target with up to 2 decimals: 2.8 -> "2.8", 1.01 -> "1.01"
+function formatTarget(v) {
+  return String(parseFloat(Number(v).toFixed(2)));
+}
+
+// Green when a cost is at/under target, red when over
+function targetCellBg(value, target) {
+  if (value == null || !isFinite(value) || target == null) return "";
+  return value <= target
+    ? "background-color:rgba(0,255,106,0.25);"
+    : "background-color:rgba(255,82,82,0.25);";
+}
+
 /* ── Period generation ────────────────────────────────────── */
 function getAnalysisPeriods(mode) {
   const periods = [];
@@ -2060,7 +2092,7 @@ function getAnalysisMetricRows() {
     const s = Math.round(v);
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   };
-  return [
+  const rows = [
     { label: "Daily Ad spent",   key: "dailySpend",  fmt: v => formatCurrency(v, c),         direction: "neutral" },
     { label: "Ad spent",         key: "spend",       fmt: v => formatCurrency(v, c),         direction: "neutral" },
     { label: "thumb-stop ratio", key: "thumbStop",   fmt: v => formatPct(v),                 direction: "higher" },
@@ -2080,13 +2112,20 @@ function getAnalysisMetricRows() {
     { label: "Frequency",        key: "freq",        fmt: v => formatNum(v, 2),              direction: "lower"  },
     { label: "% view conversion",key: "viewPct",     fmt: v => formatPct(v),                 direction: "higher" },
   ];
+  if (hasTargetCac()) {
+    const i = rows.findIndex(r => r.key === "cpa");
+    rows[i] = { ...rows[i], direction: "cacTarget" };
+    rows.splice(i + 1, 0, { label: "target CAC", key: "__targetCac", direction: "targetCac" });
+  }
+  return rows;
 }
 
 /* ── Render the Analysis table ────────────────────────────── */
 function renderAnalysisTable(cols, mode) {
   if (!cols.length) return `<div class="table-empty">No data.</div>`;
   const metrics = getAnalysisMetricRows();
-  const target  = getTargetRoas();
+  const target    = getTargetRoas();
+  const targetCac = getTargetCac();
 
   // Header row
   const headerCells = cols.map(c => `<th class="th-num">${c.period.label}</th>`).join("");
@@ -2105,6 +2144,18 @@ function renderAnalysisTable(cols, mode) {
       </tr>`;
     }
 
+    if (m.direction === "targetCac") {
+      // Editable target CAC, same layout as the target ROAS row
+      const inputCell = `<td class="td-num analysis-target">
+        <input type="number" step="1" min="0" id="analysis-target-cac" value="${targetCac}" />
+      </td>`;
+      const blankCells = cols.slice(1).map(() => `<td class="td-num"></td>`).join("");
+      return `<tr class="analysis-row-target">
+        <td class="td-name">${m.label}</td>
+        ${inputCell}${blankCells}
+      </tr>`;
+    }
+
     const vals = cols.map(c => c.metrics[m.key]).filter(v => v != null && isFinite(v));
     let mn = null, mx = null;
     if (m.direction !== "neutral" && vals.length >= 2) {
@@ -2114,7 +2165,9 @@ function renderAnalysisTable(cols, mode) {
 
     const cells = cols.map(c => {
       const v   = c.metrics[m.key];
-      const bg  = (m.direction === "higher" || m.direction === "lower")
+      const bg  = m.direction === "cacTarget"
+                  ? targetCellBg(v, targetCac)
+                  : (m.direction === "higher" || m.direction === "lower")
                   ? analysisCellBg(v, mn, mx, m.direction === "lower")
                   : "";
       const txt = (v == null || (typeof v === "number" && !isFinite(v))) ? "—" : m.fmt(v);
@@ -2167,6 +2220,16 @@ function renderAnalysisFromCache() {
     input.addEventListener("change", e => {
       const v = parseFloat(e.target.value);
       if (!isNaN(v) && v >= 0) setTargetRoas(v);
+    });
+  }
+  const cacInput = document.getElementById("analysis-target-cac");
+  if (cacInput) {
+    cacInput.addEventListener("change", e => {
+      const v = parseFloat(e.target.value);
+      if (!isNaN(v) && v >= 0) {
+        setTargetCac(v);
+        renderAnalysisFromCache();
+      }
     });
   }
 }
@@ -2256,7 +2319,8 @@ function summaryMetricsForPeriod(dailyRows, period) {
   return { revenue, roas, spend, cr, ctr, cpm, cpmr };
 }
 
-function computeHitRate(adRows, targetRoas) {
+// Pass = at least 3 purchases AND (CPA <= targetCac when given, else ROAS >= targetRoas)
+function computeHitRate(adRows, targetRoas, targetCac = null) {
   // Aggregate per ad_id (Meta may return multiple rows per ad in some breakdown configs)
   const byAd = {};
   for (const r of adRows) {
@@ -2273,8 +2337,11 @@ function computeHitRate(adRows, targetRoas) {
     if (ad.spend <= 0) continue;
     total++;
     // "spent at least 3x cost per purchase" === purchases >= 3 (since CPP = spend / purchases)
-    const roas = ad.spend > 0 ? ad.revenue / ad.spend : 0;
-    if (ad.purchases >= 3 && roas >= targetRoas) qualified++;
+    if (ad.purchases < 3) continue;
+    const meetsTarget = targetCac != null
+      ? ad.spend / ad.purchases <= targetCac
+      : ad.revenue / ad.spend >= targetRoas;
+    if (meetsTarget) qualified++;
   }
   return { qualified, total, rate: total > 0 ? qualified / total : 0 };
 }
@@ -2315,7 +2382,14 @@ function renderSummary(dailyRows, adRows) {
   }).join("");
 
   const targetRoas = HIT_RATE_TARGET_ROAS[currentClient.key] ?? 1.0;
-  const hit = computeHitRate(adRows, targetRoas);
+  const targetCac  = TARGET_CAC_DEFAULTS[currentClient.key] ?? null;
+  const hit = computeHitRate(adRows, targetRoas, targetCac);
+  const targetLabel = targetCac != null
+    ? `Target CAC ${formatCurrency(targetCac, c)}`
+    : `Target ROAS ${formatTarget(targetRoas)}`;
+  const passRule = targetCac != null
+    ? `CAC ≤ ${formatCurrency(targetCac, c)}`
+    : `ROAS ≥ ${formatTarget(targetRoas)}`;
   const ratePct = (hit.rate * 100).toFixed(1);
 
   return `
@@ -2332,11 +2406,11 @@ function renderSummary(dailyRows, adRows) {
       <div class="hit-rate-card">
         <div class="hit-rate-header">
           <span class="hit-rate-label">Hit Rate</span>
-          <span class="hit-rate-period">Last 90 days · Target ROAS ${targetRoas.toFixed(1)}</span>
+          <span class="hit-rate-period">Last 90 days · ${targetLabel}</span>
         </div>
         <div class="hit-rate-value">${ratePct}%</div>
         <div class="hit-rate-meta"><strong>${hit.qualified}</strong> of <strong>${hit.total}</strong> ads passed</div>
-        <div class="hit-rate-sub">Pass = at least 3 purchases AND ROAS ≥ ${targetRoas.toFixed(1)}</div>
+        <div class="hit-rate-sub">Pass = at least 3 purchases AND ${passRule}</div>
       </div>
     </div>`;
 }
