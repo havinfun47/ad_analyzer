@@ -20,6 +20,12 @@ const CLIENTS = {
     adAccountId: "act_666605770419715",
     currency: "CAD",
     logo: null
+  },
+  lucillehealth: {
+    name: "Lucille Health",
+    adAccountId: "act_1685611612853923",
+    currency: "USD",
+    logo: null
   }
 };
 
