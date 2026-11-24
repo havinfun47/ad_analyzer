@@ -25,10 +25,12 @@ const CLIENTS = {
     name: "Lucille Health",
     adAccountId: "act_1685611612853923",
     currency: "USD",
-    logo: null
+    logo: null,
+    shopify: true   // Shopify KPIs in Performance Overview (store set in supabase/functions/shopify-metrics)
   }
 };
 
 const META_API_VERSION = "v25.0";
 const META_API_BASE    = `https://graph.facebook.com/${META_API_VERSION}`;
 const TOKEN_KEY        = "meta_access_token";
+const SHOPIFY_METRICS_URL = "https://erbdmcgjevejbrpvxgge.supabase.co/functions/v1/shopify-metrics";

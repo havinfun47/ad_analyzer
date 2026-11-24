@@ -1,0 +1,5 @@
+.shopify/*
+.shopify.lock
+node_modules
+.env
+.env.*

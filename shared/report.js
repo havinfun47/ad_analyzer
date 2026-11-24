@@ -353,6 +353,110 @@ function renderKPIs(metrics, prevMetrics, currency) {
   `).join("");
 }
 
+/* ── Shopify KPIs (clients with `shopify: true` in config.js) ── */
+// Data comes from the shopify-metrics Supabase function, which checks the Meta token
+// can see this client's ad account, then runs ShopifyQL for the same two periods.
+let _shopifyReq = 0;
+
+function ensureShopifySection() {
+  let wrap = document.getElementById("shopify-kpis");
+  if (wrap) return wrap;
+  const kpiGrid = document.getElementById("kpi-grid");
+  if (!kpiGrid) return null;
+  wrap = document.createElement("div");
+  wrap.id = "shopify-kpis";
+  wrap.className = "shopify-kpis";
+  wrap.innerHTML = `
+    <div class="shopify-kpis-header">
+      <span class="shopify-kpis-title">Shopify</span>
+      <span class="shopify-kpis-note">Store-wide, all sales channels, not only ad-driven orders</span>
+    </div>
+    <div class="kpi-grid" id="shopify-kpi-grid"></div>`;
+  kpiGrid.after(wrap);
+  return wrap;
+}
+
+async function loadShopify() {
+  if (!currentClient?.shopify || typeof SHOPIFY_METRICS_URL === "undefined") return;
+  const wrap = ensureShopifySection();
+  if (!wrap) return;
+  const grid = wrap.querySelector("#shopify-kpi-grid");
+  const req  = ++_shopifyReq;
+  const d    = currentDates;
+  grid.innerHTML = `<div class="skeleton skeleton-kpi"></div>`.repeat(4);
+  try {
+    const res = await fetch(SHOPIFY_METRICS_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client: currentClient.key, metaToken: getToken(),
+        since: d.since, until: d.until, compSince: d.compSince, compUntil: d.compUntil
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (req !== _shopifyReq) return; // a newer date range is loading
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    grid.innerHTML = renderShopifyKPIs(data.current, data.previous, data.currency);
+  } catch (err) {
+    if (req !== _shopifyReq) return;
+    console.error("Shopify KPIs failed:", err);
+    grid.innerHTML = `<div class="shopify-kpis-error">Couldn't load Shopify data: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderShopifyKPIs(curr, prev, currency) {
+  const c = currency || currentClient.currency || "USD";
+  const typed = m => (m.subscriptionOrders || 0) + (m.oneTimeOrders || 0);
+  const shareOf = (n, m) => typed(m) ? formatPct(n / typed(m) * 100) : "—";
+  const count = v => formatNum(v, 0);
+  const pct = v => v == null ? "—" : formatPct(v * 100);
+
+  const cards = [
+    {
+      label: "Subscription Orders",
+      value: count(curr.subscriptionOrders),
+      badge: changeBadge(curr.subscriptionOrders, prev?.subscriptionOrders),
+      compare: prev ? `vs ${count(prev.subscriptionOrders)}` : "",
+      sub: `${shareOf(curr.subscriptionOrders, curr)} of orders · ${formatCurrency(curr.subscriptionSales, c)}`
+    },
+    {
+      label: "One-time Orders",
+      value: count(curr.oneTimeOrders),
+      badge: changeBadge(curr.oneTimeOrders, prev?.oneTimeOrders),
+      compare: prev ? `vs ${count(prev.oneTimeOrders)}` : "",
+      sub: `${shareOf(curr.oneTimeOrders, curr)} of orders · ${formatCurrency(curr.oneTimeSales, c)}`
+    },
+    {
+      label: "New-Customer Subscriptions",
+      value: count(curr.subscriptionOrdersNew),
+      badge: changeBadge(curr.subscriptionOrdersNew, prev?.subscriptionOrdersNew),
+      compare: prev ? `vs ${count(prev.subscriptionOrdersNew)}` : "",
+      sub: `${count(curr.subscriptionOrdersReturning)} subscription orders from returning customers`
+    },
+    {
+      label: "Repeat Customer %",
+      value: pct(curr.returningCustomerRate),
+      badge: curr.returningCustomerRate != null && prev?.returningCustomerRate != null
+        ? changeBadge(curr.returningCustomerRate, prev.returningCustomerRate)
+        : `<span class="kpi-badge neutral">—</span>`,
+      compare: prev?.returningCustomerRate != null ? `vs ${pct(prev.returningCustomerRate)}` : "",
+      sub: `${count(curr.returningCustomers)} of ${count(curr.customers)} customers had ordered before`
+    }
+  ];
+
+  return cards.map(card => `
+    <div class="kpi-card">
+      <div class="kpi-label">${card.label}</div>
+      <div class="kpi-value">${card.value}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        ${card.badge}
+        <span class="kpi-compare">${card.compare}</span>
+      </div>
+      <div class="kpi-sub">${card.sub}</div>
+    </div>
+  `).join("");
+}
+
 /* ── Render Campaign Table ─────────────────────────────────── */
 function buildCampaignRows(rows, currency) {
   return rows.map(r => {
@@ -901,6 +1005,7 @@ async function loadReport() {
 
   showLoading(true);
   showError(null);
+  loadShopify(); // independent of Meta; renders into its own block when ready
 
   const dates = currentDates;
   const client = currentClient;

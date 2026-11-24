@@ -1,0 +1,7 @@
+{
+  "name": "scale-science-reporting",
+  "version": "1.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": { "deploy": "shopify app deploy", "info": "shopify app info" }
+}

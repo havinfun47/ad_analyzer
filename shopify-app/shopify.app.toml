@@ -1,0 +1,19 @@
+# Scale Science Reporting: read-only Shopify app behind the ad analyzer's Shopify KPIs.
+# Config only (no app code). Install + token handling lives in the Supabase function
+# supabase/functions/shopify-auth. Push changes with: shopify app deploy
+
+client_id = "c56bea0ae9b7f099c443f381ceb68514"
+name = "Scale Science Reporting"
+application_url = "https://erbdmcgjevejbrpvxgge.supabase.co/functions/v1/shopify-auth"
+embedded = false
+
+[build]
+
+[webhooks]
+api_version = "2026-10"
+
+[access_scopes]
+scopes = "read_reports,read_orders"
+
+[auth]
+redirect_urls = [ "https://erbdmcgjevejbrpvxgge.supabase.co/functions/v1/shopify-auth/callback" ]
